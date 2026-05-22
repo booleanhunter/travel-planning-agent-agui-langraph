@@ -9,7 +9,7 @@
  * in the system prompt for quick visual scanning.
  */
 
-import type { Command } from '@langchain/langgraph';
+import { isGraphBubbleUp, type Command } from '@langchain/langgraph';
 import { ToolMessage, type AIMessage } from '@langchain/core/messages';
 import { createMiddleware } from 'langchain';
 
@@ -92,6 +92,11 @@ export const observabilityMiddleware = createMiddleware({
             turns.get(threadId)?.tools.push(name);
             return result;
         } catch (err) {
+            // GraphInterrupt (from `interrupt()`) and ParentCommand are LangGraph
+            // control-flow signals, NOT errors — they must bubble up so the
+            // runtime can pause the graph and surface the interrupt payload.
+            // Catching them here would silently swallow elicitation requests.
+            if (isGraphBubbleUp(err)) throw err;
             const ms = Date.now() - t0;
             const msg = err instanceof Error ? err.message : String(err);
             // eslint-disable-next-line no-console

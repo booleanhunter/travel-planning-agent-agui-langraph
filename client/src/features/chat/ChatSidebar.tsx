@@ -15,11 +15,7 @@ import { useAgent, useInterrupt } from '@copilotkit/react-core/v2';
 import type { AssistantMessage, Message, ToolMessage } from '@ag-ui/core';
 import { InlineVariableChips } from '../elicit/InlineVariableChips.tsx';
 import type { ElicitRequest } from '../elicit/types.ts';
-
-// Agent name must match the key on CopilotRuntime({ agents: { ... } }) in
-// server/src/index.ts. Without this, useAgent/useInterrupt resolve the
-// implicit 'default' agent and throw "Agent 'default' not found".
-const AGENT_ID = 'itineraryPlanner';
+import { AGENT_ID } from './agent-id.ts';
 
 export function ChatSidebar() {
     const { agent } = useAgent({ agentId: AGENT_ID });
@@ -99,9 +95,9 @@ export function ChatSidebar() {
 
             <div className="sidebar-thread" ref={threadRef}>
                 {messages.length === 0 && !elicitElement && (
-                    <p className="placeholder">
-                        Try: <em>Plan a trip to Bangalore</em>.
-                    </p>
+                    <div className="sidebar-welcome">
+                        <p className="sidebar-welcome-bubble">Hey Ashwin — ready when you are.</p>
+                    </div>
                 )}
                 {messages.map((msg) => (
                     <MessageRow key={msg.id} message={msg} toolResults={toolResults} />
@@ -121,7 +117,9 @@ export function ChatSidebar() {
                         type="text"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
-                        placeholder={isRunning ? 'Thinking…' : 'Ask anything…'}
+                        placeholder={
+                            isRunning ? 'Thinking…' : 'Type a prompt or pick a suggestion…'
+                        }
                         disabled={isRunning || !agent}
                         aria-label="Message"
                     />
@@ -133,6 +131,7 @@ export function ChatSidebar() {
                         <i className="ti ti-arrow-up" aria-hidden="true" />
                     </button>
                 </div>
+                <p className="sidebar-input-help">Enter to send</p>
             </form>
         </aside>
     );
