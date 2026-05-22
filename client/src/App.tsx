@@ -1,7 +1,6 @@
+import { CanvasArea } from './features/canvas/CanvasArea.tsx';
 import { ChatSidebar } from './features/chat/ChatSidebar.tsx';
 
-// userId / sessionId wiring lands in Phase 1 once the canvas mounts via
-// useAgent and we plumb them into agent state through provider properties.
 export default function App() {
     return (
         <div className="app">
@@ -23,13 +22,7 @@ export default function App() {
 
             <main className="layout">
                 <section className="canvas" aria-label="Trip workspace">
-                    <div className="canvas-empty">
-                        <i className="ti ti-map-pin canvas-empty-icon" aria-hidden="true" />
-                        <p className="canvas-empty-text">
-                            POI cards and your composed itinerary will appear here once you start a
-                            trip.
-                        </p>
-                    </div>
+                    <CanvasArea />
                 </section>
                 <ChatSidebar />
             </main>

@@ -118,6 +118,79 @@
     font-size: 13px;
 }
 
+/* Welcome (no messages yet) — the "Where are you going?" intro */
+
+.canvas-welcome {
+    max-width: 640px;
+    padding-top: var(--space-2xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.canvas-welcome-eyebrow {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+}
+
+.canvas-welcome-heading {
+    margin: 0;
+    font-size: 32px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+}
+
+.canvas-welcome-description {
+    margin: 0;
+    max-width: 50ch;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.canvas-welcome-prompts {
+    list-style: none;
+    margin: var(--space-md) 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+}
+
+.canvas-welcome-memory {
+    margin: var(--space-md) 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.2px;
+}
+
+.canvas-welcome-memory-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--semantic-amber);
+    display: inline-block;
+}
+
+.canvas-welcome-memory-label {
+    color: var(--text-secondary);
+}
+
+.canvas-welcome-memory-tag {
+    color: var(--text-tertiary);
+}
+
 .sidebar {
     background: var(--bg-primary);
     display: flex;
@@ -157,6 +230,31 @@
 .placeholder {
     color: var(--text-tertiary);
     font-size: 13px;
+}
+
+/* Sidebar welcome bubble (no messages yet) */
+.sidebar-welcome {
+    display: flex;
+    justify-content: flex-start;
+}
+.sidebar-welcome-bubble {
+    margin: 0;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+/* Helper text under the prompt input */
+.sidebar-input-help {
+    margin: 6px 0 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.3px;
+    text-align: right;
 }
 
 /* ---------- Chat thread entries ---------- */
