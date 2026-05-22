@@ -1,0 +1,31 @@
+services:
+  redis:
+    image: redis/redis-stack:latest
+    container_name: trip-itinerary-redis
+    ports:
+      - "6379:6379"
+      - "8001:8001"  # RedisInsight UI — useful for showing memory state on stage
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  agent-memory-server:
+    image: redislabs/agent-memory-server:latest
+    container_name: trip-itinerary-memory-server
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: openai
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      AUTH_DISABLED: "true"  # local dev only — enable real auth for any hosted version
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:

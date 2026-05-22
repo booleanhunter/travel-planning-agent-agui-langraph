@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+.yarn/install-state.gz
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.vite/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# Docker volumes
+data/
+
+# Test coverage
+coverage/
+
+# Local browser automation + screenshots
+.playwright-cli/
+*.png
+
+# TypeScript incremental build cache + emitted JS from config files
+*.tsbuildinfo
+client/vite.config.js
+client/vite.config.d.ts
