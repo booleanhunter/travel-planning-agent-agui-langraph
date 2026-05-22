@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+.next
+coverage
+*.log
+
+# Generated / vendored
+client/dist
+server/dist
+package-lock.json
+
+# Docs & data we don't want auto-reformatted
+docs/**/*.md
+README.md
+*.html
