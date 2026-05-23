@@ -35,9 +35,13 @@ ${recentTurns ? `Recent conversation:\n${recentTurns}\n\n` : ""}User message: ${
 
   const extracted = await llm.invoke(prompt);
 
-  // Memory-sourced interests fill in only if the user didn't articulate any
+  // Priority: this turn's extraction > previously carried-in interests > memory
   const memInterests = prefs?.recurringInterests ?? [];
-  const interests = extracted.interests.length ? extracted.interests : memInterests;
+  const interests = extracted.interests.length
+    ? extracted.interests
+    : state.interests.length
+      ? state.interests
+      : memInterests;
 
   return {
     destination: extracted.destination ?? state.destination,

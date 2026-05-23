@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
 import type { POI, Weather, ElicitSpec, DotStatus, City } from "../types";
 
+interface ConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface AgentTurnInput {
   userMessage: string;
   destination?: City;
@@ -20,7 +25,7 @@ interface AgentStream {
   dots: Record<string, DotStatus>;
   running: boolean;
   error: string | null;
-  conversation: Array<{ role: "user" | "assistant"; content: string }>;
+  conversation: ConversationTurn[];
   pickedIds: string[];
   setPickedIds: React.Dispatch<React.SetStateAction<string[]>>;
   submitTurn: (input: AgentTurnInput) => Promise<void>;
@@ -45,8 +50,14 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
   const [dots, setDots] = useState<Record<string, DotStatus>>({});
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
+  // Resolved slots from RouteIntent — carried forward to subsequent turns
+  const [resolvedSlots, setResolvedSlots] = useState<{
+    destination?: City;
+    dates?: { start: string; end: string };
+    interests?: string[];
+  }>({});
 
   useEffect(() => {
     agentRef.current = new HttpAgent({ url: "/api/chat" });
@@ -58,6 +69,9 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     if (delta.elicit !== undefined) setElicit(delta.elicit as ElicitSpec);
     if (delta.response !== undefined) setResponse(delta.response as string);
     if (delta.suggestedActions !== undefined) setSuggestedActions(delta.suggestedActions as string[]);
+    if (delta.destination !== undefined) setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
+    if (delta.dates !== undefined) setResolvedSlots((s) => ({ ...s, dates: delta.dates as { start: string; end: string } }));
+    if (delta.interests !== undefined) setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
   }, []);
 
   const resetCanvas = useCallback(() => {
@@ -70,6 +84,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     setConversation([]);
     setPickedIds([]);
     setError(null);
+    setResolvedSlots({});
     setSessionId(newSessionId());
   }, []);
 
@@ -86,7 +101,11 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       // append user message to local transcript
       setConversation((prev) => [...prev, { role: "user", content: input.userMessage }]);
 
-      const stateToSend: Record<string, unknown> = { userId: USER_ID };
+      // Start from previously resolved slots, then let input override
+      const stateToSend: Record<string, unknown> = {
+        userId: USER_ID,
+        ...resolvedSlots,
+      };
       if (input.destination) stateToSend.destination = input.destination;
       if (input.dates) stateToSend.dates = input.dates;
       if (input.interests?.length) stateToSend.interests = input.interests;
@@ -100,6 +119,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       ]);
       agent.setState(stateToSend);
 
+      let latestResponseThisRun: string | null = null;
+
       const subscriber: AgentSubscriber = {
         onStepStartedEvent: ({ event }) => {
           setDots((d) => ({ ...d, [event.stepName]: "pending" }));
@@ -109,16 +130,17 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
         },
         onStateSnapshotEvent: ({ event }) => {
           const snapshot = event.snapshot as Record<string, unknown>;
-          if (snapshot && typeof snapshot === "object") applyDelta(snapshot);
+          if (!snapshot || typeof snapshot !== "object") return;
+          if (typeof snapshot.response === "string") {
+            latestResponseThisRun = snapshot.response;
+          }
+          applyDelta(snapshot);
         },
         onRunFinishedEvent: () => {
-          // capture the agent response into the transcript
-          setResponse((respText) => {
-            if (respText) {
-              setConversation((prev) => [...prev, { role: "assistant", content: respText }]);
-            }
-            return respText;
-          });
+          if (latestResponseThisRun) {
+            const text = latestResponseThisRun;
+            setConversation((prev) => [...prev, { role: "assistant", content: text }]);
+          }
         },
         onRunErrorEvent: ({ event }) => {
           setError(event.message ?? "Unknown error");
@@ -133,7 +155,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
         setRunning(false);
       }
     },
-    [applyDelta, conversation, sessionId, pickedIds],
+    [applyDelta, conversation, sessionId, pickedIds, resolvedSlots],
   );
 
   return {
