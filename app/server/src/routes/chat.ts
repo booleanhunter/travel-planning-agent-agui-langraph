@@ -29,6 +29,10 @@ router.post("/", async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
 
   const appNodeSet = new Set<string>(APP_NODES);
 
+  console.log(`\n========= [chat] turn — session=${sessionId} runId=${runId.slice(0, 8)}…`);
+  console.log(`[chat] user msg: "${userMessage.slice(0, 100)}"`);
+  console.log(`[chat] client state: destination=${state.destination ?? "—"} dates=${state.dates ? JSON.stringify(state.dates) : "—"} interests=[${Array.isArray(state.interests) ? (state.interests as string[]).join(",") : ""}] pickedPoiIds=${Array.isArray(state.pickedPoiIds) ? (state.pickedPoiIds as string[]).length : 0}`);
+
   try {
     send({ type: EventType.RUN_STARTED, threadId, runId });
 

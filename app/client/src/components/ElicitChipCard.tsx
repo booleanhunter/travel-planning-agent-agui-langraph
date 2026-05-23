@@ -25,6 +25,19 @@ export function ElicitChipCard({ spec, onSubmit }: Props) {
 
   const setValue = (name: string, v: unknown) => setValues((s) => ({ ...s, [name]: v }));
 
+  // Whether any field has a meaningful value — controls Continue button disabled state.
+  const hasAnyValue = spec.fields.some((field) => {
+    const v = values[field.name];
+    if (v === undefined || v === null) return false;
+    if (typeof v === "string") return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") {
+      const dr = v as { start?: string; end?: string };
+      return !!(dr.start && dr.end);  // date-range requires both ends filled
+    }
+    return false;
+  });
+
   const handleSubmit = () => onSubmit(values);
 
   return (
@@ -121,7 +134,12 @@ export function ElicitChipCard({ spec, onSubmit }: Props) {
         </div>
       ))}
 
-      <button type="button" className="elicit-submit" onClick={handleSubmit}>
+      <button
+        type="button"
+        className="elicit-submit"
+        onClick={handleSubmit}
+        disabled={!hasAnyValue}
+      >
         Continue
       </button>
     </div>
