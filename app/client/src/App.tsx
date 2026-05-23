@@ -4,7 +4,7 @@ import { PromptInput } from "./components/PromptInput";
 import { ChatSidebar } from "./components/ChatSidebar";
 import { ElicitChipCard } from "./components/ElicitChipCard";
 import { PointOfInterestGrid } from "./components/PointOfInterestGrid";
-import { ComposedItineraryPane } from "./components/ComposedItineraryPane";
+import { PlanAccordion } from "./components/PlanAccordion";
 import { LiveRouteMap } from "./components/LiveRouteMap";
 import { WeatherCard } from "./components/WeatherCard";
 import { MemoryDrawer } from "./components/MemoryDrawer";
@@ -175,19 +175,16 @@ export function App() {
           {stream.weather && <WeatherCard weather={stream.weather} />}
           {stream.pois.length > 0 && (
             <>
-              <div className="section-title">Places</div>
-              <PointOfInterestGrid pois={stream.pois} pickedIds={pickedIds} onToggle={togglePick} />
-              <ComposedItineraryPane picked={picked} onRemove={removePick} />
+              <PlanAccordion
+                picked={picked}
+                onRemovePick={removePick}
+                onSave={handleSave}
+                saving={saving}
+                savedAt={savedAt}
+              >
+                <PointOfInterestGrid pois={stream.pois} pickedIds={pickedIds} onToggle={togglePick} />
+              </PlanAccordion>
               <LiveRouteMap picked={picked} />
-              {picked.length > 0 && (
-                <button
-                  className="save-trip"
-                  onClick={handleSave}
-                  disabled={saving}
-                >
-                  {saving ? "Saving…" : savedAt ? `Saved at ${savedAt} — save again` : "Save this trip"}
-                </button>
-              )}
             </>
           )}
         </main>
