@@ -4,6 +4,12 @@ import type { PastTrip, UserPreferences } from "../types.js";
 
 let client: MemoryAPIClient | null = null;
 
+// Only these values are valid interest descriptors. AMS topics that aren't in
+// this set (like "trip_history" or city names) must not bleed into prefs.
+const LEGAL_INTERESTS = new Set([
+  "food", "landmarks", "offbeat", "slow", "outdoors", "nightlife", "culture",
+]);
+
 export function getAms(): MemoryAPIClient {
   if (client) return client;
   client = new MemoryAPIClient({ baseUrl: config.agentMemoryServerUrl });
@@ -40,8 +46,7 @@ export async function searchUserPreferences(userId: string): Promise<UserPrefere
     else if (text.includes("pair") || text.includes("couple")) prefs.groupSize = "pair";
 
     for (const t of m.topics ?? []) {
-      if (t === "interests" || t === "travel_preferences" || t === "budget") continue;
-      interestSet.add(t);
+      if (LEGAL_INTERESTS.has(t)) interestSet.add(t);
     }
   }
   if (interestSet.size) prefs.recurringInterests = Array.from(interestSet);

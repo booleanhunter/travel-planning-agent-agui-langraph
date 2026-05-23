@@ -72,6 +72,12 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     if (delta.destination !== undefined) setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
     if (delta.dates !== undefined) setResolvedSlots((s) => ({ ...s, dates: delta.dates as { start: string; end: string } }));
     if (delta.interests !== undefined) setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
+    // Each node that returns a `response` field contributes a new assistant bubble.
+    // (TravelAgent emits an acknowledgment, FollowUp emits the substantive reply.)
+    if (typeof delta.response === "string" && delta.response.length > 0) {
+      const text = delta.response;
+      setConversation((prev) => [...prev, { role: "assistant", content: text }]);
+    }
   }, []);
 
   const resetCanvas = useCallback(() => {
@@ -119,8 +125,6 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       ]);
       agent.setState(stateToSend);
 
-      let latestResponseThisRun: string | null = null;
-
       const subscriber: AgentSubscriber = {
         onStepStartedEvent: ({ event }) => {
           setDots((d) => ({ ...d, [event.stepName]: "pending" }));
@@ -131,16 +135,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
         onStateSnapshotEvent: ({ event }) => {
           const snapshot = event.snapshot as Record<string, unknown>;
           if (!snapshot || typeof snapshot !== "object") return;
-          if (typeof snapshot.response === "string") {
-            latestResponseThisRun = snapshot.response;
-          }
           applyDelta(snapshot);
-        },
-        onRunFinishedEvent: () => {
-          if (latestResponseThisRun) {
-            const text = latestResponseThisRun;
-            setConversation((prev) => [...prev, { role: "assistant", content: text }]);
-          }
         },
         onRunErrorEvent: ({ event }) => {
           setError(event.message ?? "Unknown error");

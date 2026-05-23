@@ -13,11 +13,10 @@ interface Props {
 }
 
 const NODE_LABEL: Record<string, string> = {
-  RouteIntent: "extracting slots…",
-  FetchRecs: "searching places",
+  TravelAgent:  "extracting slots…",
+  FetchRecs:    "searching places",
   FetchWeather: "looking up weather",
-  FinalizePlan: "composing response",
-  FinalizeElicit: "asking for details",
+  FollowUp:     "composing response",
 };
 
 export function ChatSidebar({ conversation, dots, elicitSlot, followupSlot, inputSlot }: Props) {
