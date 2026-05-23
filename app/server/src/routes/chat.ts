@@ -1,19 +1,17 @@
 import { Router, type Request, type Response } from "express";
-import { randomUUID } from "node:crypto";
 import { EventType } from "@ag-ui/core";
 import { graph, APP_NODES } from "../agent/graph.js";
 
 const router = Router();
 
-interface ChatTurnRequest {
-  userId: string;
-  sessionId: string;
-  userMessage: string;
-  /** Accumulated client-side state from previous turns (filled slots, picked POIs, etc.) */
-  state?: Record<string, unknown>;
+interface RunAgentInputBody {
+  threadId: string;
+  runId: string;
+  state?: Record<string, unknown> & { userId?: string };
+  messages?: Array<{ role: string; content: string }>;
 }
 
-router.post("/", async (req: Request<unknown, unknown, ChatTurnRequest>, res: Response) => {
+router.post("/", async (req: Request<unknown, unknown, RunAgentInputBody>, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -23,9 +21,12 @@ router.post("/", async (req: Request<unknown, unknown, ChatTurnRequest>, res: Re
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  const { userId, sessionId, userMessage, state = {} } = req.body;
-  const threadId = sessionId;
-  const runId = randomUUID();
+  const { threadId, runId, state = {}, messages = [] } = req.body;
+  const sessionId = threadId;
+  const userId = (state.userId as string) ?? "ashwin";
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const userMessage = lastUser?.content ?? "";
+
   const appNodeSet = new Set<string>(APP_NODES);
 
   try {
