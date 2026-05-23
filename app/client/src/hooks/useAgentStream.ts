@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
 import type { POI, Weather, ElicitSpec, DotStatus, City } from "../types";
@@ -20,6 +21,8 @@ interface AgentStream {
   running: boolean;
   error: string | null;
   conversation: Array<{ role: "user" | "assistant"; content: string }>;
+  pickedIds: string[];
+  setPickedIds: React.Dispatch<React.SetStateAction<string[]>>;
   submitTurn: (input: AgentTurnInput) => Promise<void>;
   resetCanvas: () => void;
 }
@@ -43,6 +46,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
 
   useEffect(() => {
     agentRef.current = new HttpAgent({ url: "/api/chat" });
@@ -64,6 +68,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     setSuggestedActions([]);
     setDots({});
     setConversation([]);
+    setPickedIds([]);
     setError(null);
     setSessionId(newSessionId());
   }, []);
@@ -85,7 +90,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       if (input.destination) stateToSend.destination = input.destination;
       if (input.dates) stateToSend.dates = input.dates;
       if (input.interests?.length) stateToSend.interests = input.interests;
-      if (input.pickedPoiIds?.length) stateToSend.pickedPoiIds = input.pickedPoiIds;
+      const effectivePicked = input.pickedPoiIds ?? pickedIds;
+      if (effectivePicked.length) stateToSend.pickedPoiIds = effectivePicked;
 
       agent.threadId = sessionId;
       agent.setMessages([
@@ -127,7 +133,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
         setRunning(false);
       }
     },
-    [applyDelta, conversation, sessionId],
+    [applyDelta, conversation, sessionId, pickedIds],
   );
 
   return {
@@ -140,6 +146,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     running,
     error,
     conversation,
+    pickedIds,
+    setPickedIds,
     submitTurn,
     resetCanvas,
     sessionId,
