@@ -1,9 +1,14 @@
 import { Fragment, type ReactNode } from "react";
 import type { DotStatus } from "../types";
 
+interface ConversationEntry {
+  role: "user" | "assistant";
+  content: string;
+  dots?: Record<string, DotStatus>;
+}
+
 interface Props {
-  conversation: Array<{ role: "user" | "assistant"; content: string }>;
-  dots: Record<string, DotStatus>;
+  conversation: ConversationEntry[];
   /** Inline elicit card (rendered between turns when slots are missing) */
   elicitSlot?: ReactNode;
   /** Follow-up chips slot (rendered after the agent's last response) */
@@ -13,39 +18,28 @@ interface Props {
 }
 
 const NODE_LABEL: Record<string, string> = {
-  TravelAgent:  "extracting slots…",
-  FetchRecs:    "searching places",
-  FetchWeather: "looking up weather",
-  FollowUp:     "composing response",
+  TravelAgent:  "Understanding your request",
+  FetchRecs:    "Searching for places",
+  FetchWeather: "Looking up weather",
+  FollowUp:     "Composing response",
 };
 
-export function ChatSidebar({ conversation, dots, elicitSlot, followupSlot, inputSlot }: Props) {
-  const dotEntries = Object.entries(dots);
-
-  // Index of the most recent user message — dots render right after it,
-  // so the visual flow is: user msg → tool-row dots → assistant msg.
-  let lastUserIndex = -1;
-  for (let i = conversation.length - 1; i >= 0; i--) {
-    if (conversation[i].role === "user") {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  const dotsBlock = dotEntries.length > 0 ? (
+function DotsBlock({ dots }: { dots: Record<string, DotStatus> }) {
+  const entries = Object.entries(dots);
+  if (!entries.length) return null;
+  return (
     <div className="toolrow-list">
-      {dotEntries.map(([name, status]) => (
+      {entries.map(([name, status]) => (
         <div key={name} className="toolrow">
           <span className={`toolrow-dot ${status}`} />
-          <span>{name}</span>
-          <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>
-            {status === "pending" ? NODE_LABEL[name] ?? "…" : ""}
-          </span>
+          <span>{NODE_LABEL[name] ?? name}</span>
         </div>
       ))}
     </div>
-  ) : null;
+  );
+}
 
+export function ChatSidebar({ conversation, elicitSlot, followupSlot, inputSlot }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-messages">
@@ -62,13 +56,9 @@ export function ChatSidebar({ conversation, dots, elicitSlot, followupSlot, inpu
             <div className={`msg msg-${m.role}`}>
               <div className="msg-bubble">{m.content}</div>
             </div>
-            {i === lastUserIndex && dotsBlock}
+            {m.role === "user" && m.dots && <DotsBlock dots={m.dots} />}
           </Fragment>
         ))}
-
-        {/* If the latest entry IS a user message, dots render above via lastUserIndex.
-            If there are no conversation entries yet but a run is mid-flight (rare), drop them at the bottom. */}
-        {lastUserIndex === -1 && dotsBlock}
 
         {elicitSlot}
         {followupSlot}

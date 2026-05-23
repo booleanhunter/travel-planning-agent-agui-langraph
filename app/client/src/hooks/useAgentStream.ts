@@ -3,9 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
 import type { POI, Weather, ElicitSpec, DotStatus, City, PickedPoi } from "../types";
 
-interface ConversationTurn {
+interface ConversationEntry {
   role: "user" | "assistant";
   content: string;
+  /** Tool-row dots accumulated while this turn ran. Only meaningful on user
+   *  entries — the user msg "owns" the run that follows it. Assistant entries
+   *  added by that run leave it undefined. */
+  dots?: Record<string, DotStatus>;
 }
 
 interface AgentTurnInput {
@@ -22,10 +26,9 @@ interface AgentStream {
   elicit: ElicitSpec | null;
   response: string;
   suggestedActions: string[];
-  dots: Record<string, DotStatus>;
   running: boolean;
   error: string | null;
-  conversation: ConversationTurn[];
+  conversation: ConversationEntry[];
   pickedPois: PickedPoi[];
   setPickedPois: React.Dispatch<React.SetStateAction<PickedPoi[]>>;
   submitTurn: (input: AgentTurnInput) => Promise<void>;
@@ -47,10 +50,9 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
   const [elicit, setElicit] = useState<ElicitSpec | null>(null);
   const [response, setResponse] = useState<string>("");
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
-  const [dots, setDots] = useState<Record<string, DotStatus>>({});
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<ConversationTurn[]>([]);
+  const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [pickedPois, setPickedPois] = useState<PickedPoi[]>([]);
   // Resolved slots from RouteIntent — carried forward to subsequent turns
   const [resolvedSlots, setResolvedSlots] = useState<{
@@ -72,14 +74,9 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     if (delta.destination !== undefined) setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
     if (delta.dates !== undefined) setResolvedSlots((s) => ({ ...s, dates: delta.dates as { start: string; end: string } }));
     if (delta.interests !== undefined) setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
-    // The agent can change the picked set via the updateItinerary tool — keep client in sync.
     if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as PickedPoi[]);
-    // Each node that returns a `response` field contributes a new assistant bubble.
-    // (TravelAgent emits an acknowledgment, FollowUp emits the substantive reply.)
-    if (typeof delta.response === "string" && delta.response.length > 0) {
-      const text = delta.response;
-      setConversation((prev) => [...prev, { role: "assistant", content: text }]);
-    }
+    // Note: the response → conversation push happens in the subscriber so we can
+    // associate the message with the current turnId.
   }, []);
 
   const resetCanvas = useCallback(() => {
@@ -88,7 +85,6 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     setElicit(null);
     setResponse("");
     setSuggestedActions([]);
-    setDots({});
     setConversation([]);
     setPickedPois([]);
     setError(null);
@@ -104,10 +100,9 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       setRunning(true);
       setError(null);
       setElicit(null);
-      setDots({});
 
-      // append user message to local transcript
-      setConversation((prev) => [...prev, { role: "user", content: input.userMessage }]);
+      // Append user message — dots accumulate on this entry as the run progresses.
+      setConversation((prev) => [...prev, { role: "user", content: input.userMessage, dots: {} }]);
 
       // Start from previously resolved slots, then let input override
       const stateToSend: Record<string, unknown> = {
@@ -127,17 +122,32 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       ]);
       agent.setState(stateToSend);
 
+      // Helper: update dots on the most recent user entry.
+      const updateLatestUserDots = (stepName: string, status: DotStatus) =>
+        setConversation((prev) => {
+          let idx = -1;
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].role === "user") { idx = i; break; }
+          }
+          if (idx === -1) return prev;
+          return prev.map((e, i) =>
+            i === idx
+              ? { ...e, dots: { ...(e.dots ?? {}), [stepName]: status } }
+              : e,
+          );
+        });
+
       const subscriber: AgentSubscriber = {
-        onStepStartedEvent: ({ event }) => {
-          setDots((d) => ({ ...d, [event.stepName]: "pending" }));
-        },
-        onStepFinishedEvent: ({ event }) => {
-          setDots((d) => ({ ...d, [event.stepName]: "done" }));
-        },
+        onStepStartedEvent:  ({ event }) => updateLatestUserDots(event.stepName, "pending"),
+        onStepFinishedEvent: ({ event }) => updateLatestUserDots(event.stepName, "done"),
         onStateSnapshotEvent: ({ event }) => {
           const snapshot = event.snapshot as Record<string, unknown>;
           if (!snapshot || typeof snapshot !== "object") return;
           applyDelta(snapshot);
+          if (typeof snapshot.response === "string" && snapshot.response.length > 0) {
+            const text = snapshot.response;
+            setConversation((prev) => [...prev, { role: "assistant", content: text }]);
+          }
         },
         onRunErrorEvent: ({ event }) => {
           setError(event.message ?? "Unknown error");
@@ -161,7 +171,6 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     elicit,
     response,
     suggestedActions,
-    dots,
     running,
     error,
     conversation,
