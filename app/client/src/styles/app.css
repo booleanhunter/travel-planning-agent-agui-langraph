@@ -235,26 +235,106 @@
   font-size: 12px;
 }
 
-/* ---------- Composed itinerary ---------- */
+/* ---------- Plan accordion (wraps the POI grid; picks live in the summary) ---------- */
 
-.composed {
-  background: var(--bg); border: 1px solid var(--border);
+.plan-disclosure {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-top: 16px;
+}
+.plan-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  user-select: none;
+}
+.plan-disclosure > summary::-webkit-details-marker { display: none; }
+.plan-disclosure > summary:hover { background: var(--bg-muted); }
+.plan-disclosure[open] > summary .disclosure-chevron { transform: rotate(90deg); }
+
+.plan-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plan-summary-top {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.plan-summary-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.plan-summary-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+}
+.plan-summary-spacer { flex: 1; }
+.disclosure-chevron {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-soft);
+  transition: transform 0.15s ease;
+  margin-left: 4px;
+}
+
+.plan-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: pin;
+}
+.plan-pin {
+  counter-increment: pin;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px; margin-top: 16px;
+  background: var(--bg);
+  font-size: 13px;
 }
-.composed-empty { color: var(--text-muted); font-size: 13px; font-style: italic; }
-.composed-list { display: flex; flex-direction: column; gap: 8px; }
-.composed-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+.plan-pin::before {
+  content: counter(pin);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
 }
-.composed-row-num { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); width: 24px; }
-.composed-row-name { flex: 1; font-size: 13px; }
-.composed-row-x {
-  background: none; border: none; color: var(--text-soft);
-  font-size: 16px; padding: 0 4px;
+.plan-pin-name { font-weight: 500; }
+.plan-pin-x {
+  background: none;
+  border: none;
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
 }
-.composed-row-x:hover { color: var(--red); }
+.plan-pin-x:hover { color: var(--red); }
+
+.plan-disclosure-body {
+  border-top: 1px dashed var(--border);
+  padding: 12px 16px 16px;
+}
 
 /* ---------- Weather ---------- */
 
@@ -326,10 +406,9 @@
 .save-trip {
   background: var(--primary); color: white;
   border: none; border-radius: var(--radius);
-  padding: 8px 14px;
-  margin-top: 16px;
+  padding: 5px 10px;
+  font-size: 12px;
   font-weight: 500;
-  width: 100%;
 }
 .save-trip:hover { background: var(--primary-dark); }
 .save-trip:disabled { background: var(--border-strong); cursor: not-allowed; }
