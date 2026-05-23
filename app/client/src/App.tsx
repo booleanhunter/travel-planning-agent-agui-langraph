@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAgentStream } from "./hooks/useAgentStream";
 import { PromptInput } from "./components/PromptInput";
 import { ChatSidebar } from "./components/ChatSidebar";
@@ -20,31 +20,67 @@ export function App() {
 
   const pickedPois = stream.pickedPois;
   const pickedIds = useMemo(() => pickedPois.map((p) => p.poiId), [pickedPois]);
-  // Full POI objects for the route map (needs lat/lng). When state.pois is empty
-  // (e.g. after load-past-trip before a fresh fetch) the strip still shows names
-  // from pickedPois, just the map won't render markers.
+
+  // Staging: which places the user currently has selected. Mirrors pickedPois on
+  // every server-confirmed change, but the user can freely edit between commits.
+  // Checkboxes + strip both reflect stagedPois. Server is NEVER touched until
+  // the user clicks "Update plan".
+  const [stagedPois, setStagedPois] = useState<PickedPoi[]>([]);
+  useEffect(() => {
+    setStagedPois(pickedPois);
+  }, [pickedPois]);
+
+  const stagedIds = useMemo(() => stagedPois.map((p) => p.poiId), [stagedPois]);
+
+  const stagedDiffers = useMemo(() => {
+    if (stagedPois.length !== pickedPois.length) return true;
+    return stagedPois.some((p, i) => pickedPois[i]?.poiId !== p.poiId);
+  }, [stagedPois, pickedPois]);
+
+  // Full POI objects for the route map (needs lat/lng). Driven by staged picks so
+  // the route updates instantly when the user stages/unstages.
   const pickedFullPois: POI[] = useMemo(
-    () => stream.pois.filter((p) => pickedIds.includes(p.id)),
-    [stream.pois, pickedIds],
+    () => stream.pois.filter((p) => stagedIds.includes(p.id)),
+    [stream.pois, stagedIds],
   );
 
-  const togglePick = useCallback(
-    (poi: POI) => {
-      stream.setPickedPois((picks) => {
-        const exists = picks.some((p) => p.poiId === poi.id);
-        return exists
-          ? picks.filter((p) => p.poiId !== poi.id)
-          : [...picks, { poiId: poi.id, name: poi.name }];
-      });
+  /** Build the "Here are the places I'd like to visit, in-order:" turn message
+   *  and submit it. The agent's FollowUp LLM picks this up, calls
+   *  `updateItinerary` with the matching place IDs, and Redis/state sync. */
+  const submitPlanUpdate = useCallback(
+    (picks: PickedPoi[]) => {
+      let userMessage: string;
+      if (picks.length === 0) {
+        userMessage = "Please clear my plan — I don't want any places.";
+      } else {
+        const list = picks.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
+        userMessage = `Here are the places I'd like to visit, in-order:\n${list}`;
+      }
+      return stream.submitTurn({ userMessage });
     },
     [stream],
   );
 
-  const removePick = useCallback(
-    (poiId: string) =>
-      stream.setPickedPois((picks) => picks.filter((p) => p.poiId !== poiId)),
-    [stream],
-  );
+  const handleUpdatePlan = useCallback(() => {
+    // Optimistically reflect the staged set as committed — server confirmation lands shortly.
+    stream.setPickedPois(stagedPois);
+    return submitPlanUpdate(stagedPois);
+  }, [stagedPois, stream, submitPlanUpdate]);
+
+  /** Checkbox click — purely local staging, no server call. */
+  const togglePick = useCallback((poi: POI) => {
+    setStagedPois((picks) => {
+      const exists = picks.some((p) => p.poiId === poi.id);
+      return exists
+        ? picks.filter((p) => p.poiId !== poi.id)
+        : [...picks, { poiId: poi.id, name: poi.name }];
+    });
+  }, []);
+
+  /** × on a strip pin — purely local unstaging, no server call. */
+  const removePick = useCallback((poiId: string) => {
+    setStagedPois((picks) => picks.filter((p) => p.poiId !== poiId));
+  }, []);
 
   const submitFreeForm = useCallback((text: string) => stream.submitTurn({ userMessage: text }), [stream]);
 
@@ -121,16 +157,28 @@ export function App() {
   ) : null;
 
   const followupSlot = useMemo(() => {
-    if (!stream.suggestedActions.length || stream.running) return null;
-    return (
-      <div className="followup-chips">
-        {stream.suggestedActions.map((chip) => (
-          <button key={chip} className="followup-chip" onClick={() => submitFreeForm(chip)}>
-            {chip}
-          </button>
-        ))}
-      </div>
-    );
+    if (stream.running) {
+      return (
+        <div className="agent-status">
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="agent-status-text">Working on it…</span>
+        </div>
+      );
+    }
+    if (stream.suggestedActions.length) {
+      return (
+        <div className="followup-chips">
+          {stream.suggestedActions.map((chip) => (
+            <button key={chip} className="followup-chip" onClick={() => submitFreeForm(chip)}>
+              {chip}
+            </button>
+          ))}
+        </div>
+      );
+    }
+    return null;
   }, [stream.suggestedActions, stream.running, submitFreeForm]);
 
   const canvasEmpty = stream.pois.length === 0 && !stream.weather && !stream.running && !stream.error;
@@ -170,13 +218,16 @@ export function App() {
           {stream.pois.length > 0 && (
             <>
               <PlanAccordion
-                picked={pickedPois}
+                picked={stagedPois}
                 onRemovePick={removePick}
                 onSave={handleSave}
                 saving={saving}
                 savedAt={savedAt}
+                canMarkComplete={pickedPois.length > 0 && !stagedDiffers}
+                onUpdatePlan={handleUpdatePlan}
+                canUpdatePlan={stagedDiffers && !stream.running}
               >
-                <PointOfInterestGrid pois={stream.pois} pickedIds={pickedIds} onToggle={togglePick} />
+                <PointOfInterestGrid pois={stream.pois} pickedIds={stagedIds} onToggle={togglePick} />
               </PlanAccordion>
               <LiveRouteMap picked={pickedFullPois} />
             </>
@@ -184,7 +235,6 @@ export function App() {
         </main>
         <ChatSidebar
           conversation={stream.conversation}
-          dots={stream.dots}
           elicitSlot={elicitSlot}
           followupSlot={followupSlot}
           inputSlot={<PromptInput onSubmit={submitFreeForm} disabled={stream.running} />}

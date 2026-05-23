@@ -13,39 +13,6 @@ import { updateTripPickedPois } from "../../data/trip-store.js";
 import type { AgentStateType } from "../state.js";
 import type { ElicitField, ElicitSpec, PickedPoi } from "../../types.js";
 
-// ----- Tool definition ----------------------------------------------------------------
-
-const updateItineraryArgsSchema = z.object({
-  pickedPois: z.array(z.object({
-    poiId: z.string(),
-    name: z.string(),
-  })).describe(
-    "The COMPLETE new set of picked POIs (replace semantics — not a delta). " +
-    "Derive by taking the current picks and applying whatever change the user asked for. " +
-    "Each entry must use a `poiId` that appears in the current candidate set.",
-  ),
-});
-
-const updateItineraryTool = tool(
-  async (input) => {
-    const args = input as z.infer<typeof updateItineraryArgsSchema>;
-    return { updated: true, count: args.pickedPois.length };
-  },
-  {
-    name: "updateItinerary",
-    description:
-      "Replace the user's current picked-places set with the given list. " +
-      "ONLY call this tool when the user's message NAMES specific places — examples: " +
-      "\"add Cubbon Park\", \"remove MTR\", \"I want to go to Indiranagar\", \"swap Koshy's for Karavalli\", \"clear my picks\". " +
-      "DO NOT call this tool just because the user asked to plan a trip, see places, get suggestions, or browse candidates. " +
-      "DO NOT auto-pick the candidates — the user picks them themselves via the UI or by naming them. " +
-      "DO NOT call this for small talk, thanks, questions, or generic conversation. " +
-      "Always pass the FULL new set, not a delta. " +
-      "Only use poiIds that appear in the current candidate set.",
-    schema: updateItineraryArgsSchema,
-  },
-);
-
 // ----- Structured output for the final response --------------------------------------
 
 const FollowUpOutput = z.object({
@@ -187,67 +154,51 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     messages.push(new AIMessage(state.response));  // TravelAgent's reply this turn
   }
 
-  // ----- Pass 1: tool-calling -----
+  // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
+  let appliedPicks: PickedPoi[] | undefined;
+  const updateItineraryTool = tool(
+    async ({ pickedPois }: { pickedPois: PickedPoi[] }) => {
+      await updateTripPickedPois(state.userId, state.sessionId, pickedPois);
+      appliedPicks = pickedPois;
+      console.log(`[follow-up] tool updateItinerary — wrote ${pickedPois.length} picks (${pickedPois.map((p) => p.name).join(", ")})`);
+      return { updated: true, count: pickedPois.length };
+    },
+    {
+      name: "updateItinerary",
+      description:
+        "Replace the user's current picked-places set with the given list. " +
+        "ONLY call this tool when the user's message NAMES specific places — examples: " +
+        "\"add Cubbon Park\", \"remove MTR\", \"swap Koshy's for Karavalli\", \"clear my picks\". " +
+        "DO NOT call this for generic requests, browsing, small talk, or thanks. " +
+        "DO NOT auto-pick the candidates. " +
+        "Always pass the FULL new set, not a delta. Use poiIds from the candidate list.",
+      schema: z.object({
+        pickedPois: z.array(z.object({ poiId: z.string(), name: z.string() })),
+      }),
+    },
+  );
+
   const toolModel = getChatModel().bindTools([updateItineraryTool]);
   const toolResponse = await toolModel.invoke(messages);
 
-  let nextPickedPois: PickedPoi[] | undefined;
   const toolCalls = toolResponse.tool_calls ?? [];
-  // Safety net: gpt-4o-mini sometimes auto-picks the whole candidate list on
-  // generic prompts like "plan a trip". Only honor a tool call if the user's
-  // own message actually mentioned a place (adding case) — or if they're
-  // reducing the set (removing/clearing always allowed).
-  const userMsg = state.userMessage.toLowerCase();
-  const userNamedAnyPlace = state.pois.some((p) => userMsg.includes(p.name.toLowerCase()));
-
+  const toolMessages: ToolMessage[] = [];
   for (const tc of toolCalls) {
-    if (tc.name === "updateItinerary") {
-      const parsed = updateItineraryArgsSchema.safeParse(tc.args);
-      if (!parsed.success) {
-        console.error("[follow-up] tool args failed validation:", parsed.error.message);
-        continue;
-      }
-      const proposed = parsed.data.pickedPois;
-
-      // No-op guard.
-      const sameAsCurrent =
-        proposed.length === state.pickedPois.length &&
-        proposed.every((p, i) => p.poiId === state.pickedPois[i]?.poiId);
-      if (sameAsCurrent) {
-        console.log("[follow-up] tool updateItinerary — no-op (LLM emitted same set); ignored");
-        continue;
-      }
-
-      // Adding-without-mention guard.
-      const isAdding = proposed.length > state.pickedPois.length;
-      if (isAdding && !userNamedAnyPlace) {
-        console.log("[follow-up] tool updateItinerary — rejected: user did not name any candidate place but LLM tried to add picks");
-        continue;
-      }
-
-      nextPickedPois = proposed;
-      console.log(`[follow-up] tool updateItinerary — picked=${nextPickedPois.length} (${nextPickedPois.map((p) => p.name).join(", ")})`);
-      await updateTripPickedPois(state.userId, state.sessionId, nextPickedPois)
-        .catch((err) => console.error("[follow-up] updateTripPickedPois failed:", (err as Error).message));
-    }
+    if (tc.name !== "updateItinerary") continue;
+    const result = await updateItineraryTool.invoke(tc);
+    toolMessages.push(
+      new ToolMessage({
+        tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
+        content: typeof result === "string" ? result : JSON.stringify(result),
+      }),
+    );
   }
 
-  // If a tool fired, feed the assistant message + ToolMessage back so the
-  // structured-output pass sees what was just done.
-  const messagesForFinal: BaseMessage[] = toolCalls.length
-    ? [
-        ...messages,
-        toolResponse,
-        ...toolCalls.map((tc) =>
-          new ToolMessage({
-            tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
-            content: JSON.stringify({ updated: true }),
-          }),
-        ),
-      ]
+  // ----- Pass 2: structured response -----
+  const messagesForFinal: BaseMessage[] = toolMessages.length
+    ? [...messages, toolResponse, ...toolMessages]
     : messages;
 
-  // ----- Pass 2: structured response -----
   const structuredModel = getChatModel().withStructuredOutput(FollowUpOutput, { name: "follow_up" });
   const out = await structuredModel.invoke(messagesForFinal);
   console.log(`[follow-up] LLM — suggestedActions=[${out.suggestedActions.join(",")}]`);
@@ -264,10 +215,9 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     .catch((err) => console.error("[appendTurn] failed:", (err as Error).message));
 
   const patch: Partial<AgentStateType> = {
-    response: out.textResponse,
     suggestedActions: out.suggestedActions,
     elicit,
   };
-  if (nextPickedPois) patch.pickedPois = nextPickedPois;
+  if (appliedPicks) patch.pickedPois = appliedPicks;
   return patch;
 }
