@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { DotStatus } from "../types";
 
 interface Props {
@@ -23,6 +23,30 @@ const NODE_LABEL: Record<string, string> = {
 export function ChatSidebar({ conversation, dots, elicitSlot, followupSlot, inputSlot }: Props) {
   const dotEntries = Object.entries(dots);
 
+  // Index of the most recent user message — dots render right after it,
+  // so the visual flow is: user msg → tool-row dots → assistant msg.
+  let lastUserIndex = -1;
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    if (conversation[i].role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  const dotsBlock = dotEntries.length > 0 ? (
+    <div className="toolrow-list">
+      {dotEntries.map(([name, status]) => (
+        <div key={name} className="toolrow">
+          <span className={`toolrow-dot ${status}`} />
+          <span>{name}</span>
+          <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>
+            {status === "pending" ? NODE_LABEL[name] ?? "…" : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-messages">
@@ -35,24 +59,17 @@ export function ChatSidebar({ conversation, dots, elicitSlot, followupSlot, inpu
         )}
 
         {conversation.map((m, i) => (
-          <div key={i} className={`msg msg-${m.role}`}>
-            <div className="msg-bubble">{m.content}</div>
-          </div>
+          <Fragment key={i}>
+            <div className={`msg msg-${m.role}`}>
+              <div className="msg-bubble">{m.content}</div>
+            </div>
+            {i === lastUserIndex && dotsBlock}
+          </Fragment>
         ))}
 
-        {dotEntries.length > 0 && (
-          <div className="toolrow-list">
-            {dotEntries.map(([name, status]) => (
-              <div key={name} className="toolrow">
-                <span className={`toolrow-dot ${status}`} />
-                <span>{name}</span>
-                <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>
-                  {status === "pending" ? NODE_LABEL[name] ?? "…" : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* If the latest entry IS a user message, dots render above via lastUserIndex.
+            If there are no conversation entries yet but a run is mid-flight (rare), drop them at the bottom. */}
+        {lastUserIndex === -1 && dotsBlock}
 
         {elicitSlot}
         {followupSlot}
