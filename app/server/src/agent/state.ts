@@ -11,8 +11,8 @@ export const AgentState = z.object({
   sessionId: z.string(),
   userMessage: z.string(),
 
-  // Slots — extracted by RouteIntent, possibly carried in from the client
-  intent: z.enum(["plan", "pack", "refine", "other"]).default("plan"),
+  // Slots — extracted by TravelAgent, possibly carried in from the client
+  intent: z.enum(["plan", "pack", "continue"]).default("plan"),
   destination: z.enum(["bangalore", "mumbai", "barcelona"]).optional(),
   dates: z.object({ start: z.string(), end: z.string() }).optional(),
   interests: z.array(z.string()).default([]),
