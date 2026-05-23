@@ -1,0 +1,25 @@
+{
+  "name": "trip-itinerary-builder",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Trip Itinerary Builder — adaptive UI demo for Frontend Nation 2026 + MCP Dev Summit",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w server && npm run build -w client",
+    "seed:pois": "npm run seed:pois -w server",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^6.0.3"
+  }
+}
