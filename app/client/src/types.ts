@@ -50,13 +50,19 @@ export interface UserPreferences {
   recurringInterests?: string[];
 }
 
+export interface PickedPoi {
+  poiId: string;
+  name: string;
+}
+
 export interface PastTrip {
   tripId: string;
   sessionId: string;
   city: City;
   dates?: { start: string; end: string };
-  summary: string;
-  pickedPoiIds: string[];
+  pickedPois: PickedPoi[];
+  createdAt?: string;
+  completedAt?: string;
 }
 
 export type DotStatus = "idle" | "pending" | "done" | "error";

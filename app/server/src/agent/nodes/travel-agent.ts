@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from "@langchain/core/messages";
 import { getChatModel } from "../../lib/llm.js";
 import { searchUserPreferences, getConversation } from "../../memory/ams-client.js";
+import { ensureTripDraft } from "../../data/trip-store.js";
 import type { AgentStateType } from "../state.js";
 
 const TravelAgentOutput = z.object({
@@ -70,10 +71,21 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
       ? state.interests
       : memInterests;
 
+  const resolvedDestination = out.destination ?? state.destination;
+  const resolvedDates       = out.dates ?? state.dates;
+
+  // Upsert a draft trip record in Redis with whatever we know so far.
+  // Idempotent — safe to call every turn.
+  await ensureTripDraft(state.userId, state.sessionId, {
+    city: resolvedDestination,
+    startDate: resolvedDates?.start,
+    endDate: resolvedDates?.end,
+  }).catch((err) => console.error("[travel-agent] ensureTripDraft failed:", (err as Error).message));
+
   return {
     intent: out.intent,
-    destination: out.destination ?? state.destination,
-    dates: out.dates ?? state.dates,
+    destination: resolvedDestination,
+    dates: resolvedDates,
     interests,
     preferences: prefs ?? state.preferences,
     response: out.textResponse,

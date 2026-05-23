@@ -1,6 +1,6 @@
-import { MemoryAPIClient, type MemoryRecord, type WorkingMemoryResponse } from "agent-memory-client";
+import { MemoryAPIClient, type WorkingMemoryResponse } from "agent-memory-client";
 import { config } from "../config.js";
-import type { PastTrip, UserPreferences } from "../types.js";
+import type { UserPreferences } from "../types.js";
 
 let client: MemoryAPIClient | null = null;
 
@@ -82,46 +82,3 @@ export async function appendTurn(
   });
 }
 
-/**
- * List the user's past trips from long-term episodic memory.
- */
-export async function listPastTrips(userId: string): Promise<PastTrip[]> {
-  const ams = getAms();
-  const results = await ams.searchLongTermMemory({
-    text: "trip itinerary",
-    userId: { eq: userId },
-    topics: { any: ["trip_history"] },
-    limit: 50,
-  });
-  return results.memories
-    .map((m) => parseTripFromMemory(m))
-    .filter((t): t is PastTrip => t !== null);
-}
-
-function parseTripFromMemory(m: MemoryRecord): PastTrip | null {
-  try {
-    // Episodes are stored as JSON in the `text` field — see saveTrip below.
-    const parsed = JSON.parse(m.text);
-    if (!parsed.tripId || !parsed.sessionId || !parsed.city) return null;
-    return parsed as PastTrip;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Save a completed trip as a long-term episodic memory record.
- */
-export async function saveTrip(userId: string, trip: PastTrip): Promise<void> {
-  const ams = getAms();
-  await ams.createLongTermMemory([
-    {
-      id: trip.tripId,
-      text: JSON.stringify(trip),
-      user_id: userId,
-      session_id: trip.sessionId,
-      topics: ["trip_history", trip.city],
-      memory_type: "episodic" as MemoryRecord["memory_type"],
-    },
-  ]);
-}

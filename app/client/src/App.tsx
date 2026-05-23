@@ -8,7 +8,7 @@ import { PlanAccordion } from "./components/PlanAccordion";
 import { LiveRouteMap } from "./components/LiveRouteMap";
 import { WeatherCard } from "./components/WeatherCard";
 import { MemoryDrawer } from "./components/MemoryDrawer";
-import type { POI, PastTrip, City } from "./types";
+import type { POI, PastTrip, City, PickedPoi } from "./types";
 
 const USER_ID = "ashwin";
 
@@ -18,23 +18,31 @@ export function App() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  const pickedIds = stream.pickedIds;
-  const picked: POI[] = useMemo(
+  const pickedPois = stream.pickedPois;
+  const pickedIds = useMemo(() => pickedPois.map((p) => p.poiId), [pickedPois]);
+  // Full POI objects for the route map (needs lat/lng). When state.pois is empty
+  // (e.g. after load-past-trip before a fresh fetch) the strip still shows names
+  // from pickedPois, just the map won't render markers.
+  const pickedFullPois: POI[] = useMemo(
     () => stream.pois.filter((p) => pickedIds.includes(p.id)),
     [stream.pois, pickedIds],
   );
 
   const togglePick = useCallback(
     (poi: POI) => {
-      stream.setPickedIds((ids) =>
-        ids.includes(poi.id) ? ids.filter((id) => id !== poi.id) : [...ids, poi.id],
-      );
+      stream.setPickedPois((picks) => {
+        const exists = picks.some((p) => p.poiId === poi.id);
+        return exists
+          ? picks.filter((p) => p.poiId !== poi.id)
+          : [...picks, { poiId: poi.id, name: poi.name }];
+      });
     },
     [stream],
   );
 
   const removePick = useCallback(
-    (id: string) => stream.setPickedIds((ids) => ids.filter((x) => x !== id)),
+    (poiId: string) =>
+      stream.setPickedPois((picks) => picks.filter((p) => p.poiId !== poiId)),
     [stream],
   );
 
@@ -64,33 +72,20 @@ export function App() {
     [stream],
   );
 
-  // Determine the city from the most recent POIs (server-confirmed)
-  const currentCity: City | undefined = stream.pois[0]?.city;
-
   const handleSave = useCallback(async () => {
-    if (!currentCity || picked.length === 0) return;
+    if (pickedPois.length === 0) return;
     setSaving(true);
     try {
-      const body = {
-        userId: USER_ID,
-        sessionId: stream.sessionId,
-        city: currentCity,
-        dates: undefined,  // could capture from elicit submission if needed
-        pickedPoiIds: pickedIds,
-        summary: stream.response || `${picked.length} places in ${currentCity}`,
-      };
       const res = await fetch("/api/user/save-trip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ userId: USER_ID, tripId: stream.sessionId }),
       });
-      if (res.ok) {
-        setSavedAt(new Date().toLocaleTimeString());
-      }
+      if (res.ok) setSavedAt(new Date().toLocaleTimeString());
     } finally {
       setSaving(false);
     }
-  }, [currentCity, picked.length, pickedIds, stream.response, stream.sessionId]);
+  }, [pickedPois.length, stream.sessionId]);
 
   const handleLoadTrip = useCallback(async (trip: PastTrip) => {
     setDrawerOpen(false);
@@ -105,9 +100,8 @@ export function App() {
       const data = await res.json() as {
         trip: PastTrip;
         conversationHistory: Array<{ role: string; content: string }>;
-        pickedPois: POI[];
       };
-      // Best-effort rehydrate: replay user's first message to repopulate canvas
+      // Best-effort rehydrate: replay user's first message to refetch the candidates
       const firstUser = data.conversationHistory.find((m) => m.role === "user");
       if (firstUser) {
         await stream.submitTurn({
@@ -116,7 +110,7 @@ export function App() {
           dates: data.trip.dates,
         });
       }
-      stream.setPickedIds(data.trip.pickedPoiIds);
+      stream.setPickedPois(data.trip.pickedPois);
     } catch (err) {
       console.error("load-trip failed", err);
     }
@@ -176,7 +170,7 @@ export function App() {
           {stream.pois.length > 0 && (
             <>
               <PlanAccordion
-                picked={picked}
+                picked={pickedPois}
                 onRemovePick={removePick}
                 onSave={handleSave}
                 saving={saving}
@@ -184,7 +178,7 @@ export function App() {
               >
                 <PointOfInterestGrid pois={stream.pois} pickedIds={pickedIds} onToggle={togglePick} />
               </PlanAccordion>
-              <LiveRouteMap picked={picked} />
+              <LiveRouteMap picked={pickedFullPois} />
             </>
           )}
         </main>

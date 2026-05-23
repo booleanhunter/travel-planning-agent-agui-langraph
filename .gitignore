@@ -34,8 +34,8 @@ Thumbs.db
 !.vscode/launch.json
 docs/.obsidian/
 
-# Docker volumes
-data/
+# Docker volumes (anchored to root — must not match app/server/src/data/)
+/data/
 
 # Test coverage
 coverage/
