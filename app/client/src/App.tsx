@@ -48,12 +48,18 @@ export function App() {
         ? { start: datesRaw.start, end: datesRaw.end }
         : undefined;
       const interests = values.interests as string[] | undefined;
-      stream.submitTurn({
-        userMessage: "Here's what I picked from the form.",
-        destination,
-        dates,
-        interests,
-      });
+
+      const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+      const sentences: string[] = [];
+      if (destination)       sentences.push(`My destination is ${cap(destination)}.`);
+      if (dates)             sentences.push(`I plan to travel from ${dates.start} to ${dates.end}.`);
+      if (interests?.length) sentences.push(`I am interested in ${interests.join(", ")}.`);
+
+      const userMessage = sentences.length
+        ? "Here are the details: " + sentences.join(" ")
+        : "Here are the details from the form.";
+
+      stream.submitTurn({ userMessage, destination, dates, interests });
     },
     [stream],
   );

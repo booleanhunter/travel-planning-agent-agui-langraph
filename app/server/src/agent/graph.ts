@@ -6,27 +6,25 @@ import { fetchWeather } from "./nodes/fetch-weather.js";
 import { followUp } from "./nodes/follow-up.js";
 
 /**
- * Branch on the classified intent + which slots are still missing.
+ * Pure intent-based routing — no slot checks here. FollowUp owns the
+ * elicit decision based on what's still missing.
  *
- *   continue           → FollowUp (no fetches)
- *   plan, slots filled → [FetchRecs ∥ FetchWeather] → FollowUp
- *   plan, slots missing → FollowUp (will populate elicit)
- *   pack, dest+dates   → FetchWeather → FollowUp
- *   pack, missing      → FollowUp (will populate elicit)
+ *   researching         → FetchRecs                  → FollowUp → END
+ *   tripPreparation     → FetchWeather               → FollowUp → END
+ *   itineraryPlanning   → [FetchRecs ∥ FetchWeather] → FollowUp → END
+ *   general             → FollowUp                   → END
  */
-function branchOnIntent(state: AgentStateType): "FollowUp" | "FetchWeather" | ["FetchRecs", "FetchWeather"] {
-  if (state.intent === "continue") return "FollowUp";
-
-  const haveDestination = !!state.destination;
-  const haveDates = !!state.dates;
-
-  if (!haveDestination || !haveDates) return "FollowUp";  // elicit branch
-
-  if (state.intent === "pack") return "FetchWeather";
-
-  // plan
-  if (!state.interests.length) return "FollowUp";
-  return ["FetchRecs", "FetchWeather"];
+function branchOnIntent(state: AgentStateType): "FollowUp" | "FetchRecs" | "FetchWeather" | ["FetchRecs", "FetchWeather"] {
+  const next = (() => {
+    switch (state.intent) {
+      case "researching":       return "FetchRecs" as const;
+      case "tripPreparation":   return "FetchWeather" as const;
+      case "itineraryPlanning": return ["FetchRecs", "FetchWeather"] as const;
+      case "general":           return "FollowUp" as const;
+    }
+  })();
+  console.log(`[graph] branch — intent=${state.intent} → ${Array.isArray(next) ? `[${next.join(", ")}]` : next}`);
+  return next as "FollowUp" | "FetchRecs" | "FetchWeather" | ["FetchRecs", "FetchWeather"];
 }
 
 export const graph = new StateGraph(AgentState)
@@ -35,7 +33,7 @@ export const graph = new StateGraph(AgentState)
   .addNode("FetchWeather", fetchWeather)
   .addNode("FollowUp",     followUp)
   .addEdge(START, "TravelAgent")
-  .addConditionalEdges("TravelAgent", branchOnIntent, ["FollowUp", "FetchWeather", "FetchRecs"])
+  .addConditionalEdges("TravelAgent", branchOnIntent, ["FollowUp", "FetchRecs", "FetchWeather"])
   .addEdge("FetchRecs",    "FollowUp")
   .addEdge("FetchWeather", "FollowUp")
   .addEdge("FollowUp",     END)

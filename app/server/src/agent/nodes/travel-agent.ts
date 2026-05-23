@@ -5,17 +5,21 @@ import { searchUserPreferences, getConversation } from "../../memory/ams-client.
 import type { AgentStateType } from "../state.js";
 
 const TravelAgentOutput = z.object({
-  acknowledgment: z.string().describe(
-    "A short, friendly, conversational acknowledgment for the user — 1 sentence. Shown as a chat bubble immediately, before any data is fetched. Example: \"Got it, let me look at Bangalore for you.\" Do NOT promise specific places or weather — that comes later."
+  textResponse: z.string().describe(
+    'A friendly, conversational reply to the user. Shown as a chat bubble immediately, before any data is fetched. Do NOT promise specific places or weather — those land in a later step.',
   ),
-  intent: z.enum(["plan", "pack", "continue"]).describe(
-    'Classification of what the user is doing this turn. "plan" = asking to plan or refine a trip. "pack" = asking about packing or preparation. "continue" = filling out a previous form / replying to a previous question (e.g. submission like "Here\'s what I picked from the form.").',
+  intent: z.enum(["researching", "tripPreparation", "itineraryPlanning", "general"]).describe(
+    'Classification of what the user is doing this turn. ' +
+    '"researching" = exploring places ("what is there to do in Bangalore", "tell me about the food scene"). ' +
+    '"tripPreparation" = asking about weather, what to pack, logistics. ' +
+    '"itineraryPlanning" = actively planning or refining a trip ("plan a trip to Bangalore", "build me a day"). ' +
+    '"general" = anything else, including form submissions, small talk, or replies to a previous question.',
   ),
   destination: z.enum(["bangalore", "mumbai", "barcelona"]).nullable().describe(
     "City being planned. null if not mentioned in this turn AND not visible in the prior conversation.",
   ),
   dates: z.object({ start: z.string(), end: z.string() }).nullable().describe(
-    "Travel dates as ISO YYYY-MM-DD strings. Resolve relative dates (\"next week\", \"May 20\") against today. null if unknown.",
+    'Travel dates as ISO YYYY-MM-DD strings. Resolve relative dates ("next week", "May 20") against today. null if unknown.',
   ),
   interests: z.array(z.string()).describe(
     "Short interest descriptors the user articulated this turn (e.g. food, slow, indie, moody, landmarks). Empty array if none mentioned.",
@@ -26,17 +30,20 @@ const SYSTEM_PROMPT = (today: string) => `You are a friendly travel agent helpin
 Today's date is ${today}.
 
 Your job on each turn is to:
-1. Acknowledge what the user said in 1 conversational sentence (acknowledgment field). Don't make promises about places or weather — those land in a later step.
-2. Classify their intent: "plan" (new or refined trip), "pack" (packing / preparation), "continue" (replying to a previous form / question).
+1. Reply to the user conversationally (textResponse field). Don't make promises about places or weather — those land in a later step.
+2. Classify their intent: "researching" (exploring places), "tripPreparation" (weather / packing / logistics), "itineraryPlanning" (planning or refining a trip), or "general" (anything else, including form submissions and small talk).
 3. Extract any slots they mentioned: destination, dates, interests. Use the prior conversation context to fill in slots they mentioned earlier in this session.
 
 Resolve relative dates against today (${today}). Return null for any slot not stated in this turn AND not in prior context.`;
 
 export async function travelAgent(state: AgentStateType): Promise<Partial<AgentStateType>> {
+  console.log(`[travel-agent] turn — session=${state.sessionId} user=${state.userId} msg="${state.userMessage.slice(0, 80)}"`);
+
   const [prefs, conv] = await Promise.all([
     searchUserPreferences(state.userId).catch(() => undefined),
     getConversation(state.sessionId).catch(() => null),
   ]);
+  console.log(`[travel-agent] AMS — prior messages=${conv?.messages?.length ?? 0} preferences=${prefs ? JSON.stringify(prefs) : "none"}`);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -52,6 +59,8 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
 
   const llm = getChatModel().withStructuredOutput(TravelAgentOutput, { name: "travel_agent" });
   const out = await llm.invoke(messages);
+  console.log(`[travel-agent] LLM — intent=${out.intent} destination=${out.destination ?? "—"} dates=${out.dates ? `${out.dates.start}→${out.dates.end}` : "—"} interests=[${out.interests.join(",")}]`);
+  console.log(`[travel-agent] reply: "${out.textResponse.slice(0, 120)}${out.textResponse.length > 120 ? "…" : ""}"`);
 
   // Priority for slot merge: this turn's extraction > carried-in client state > memory
   const memInterests = prefs?.recurringInterests ?? [];
@@ -67,6 +76,6 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
     dates: out.dates ?? state.dates,
     interests,
     preferences: prefs ?? state.preferences,
-    response: out.acknowledgment,  // acknowledgment rides through the standard response channel
+    response: out.textResponse,
   };
 }

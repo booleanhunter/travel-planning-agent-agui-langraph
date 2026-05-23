@@ -1,10 +1,12 @@
 /**
  * Quick sanity test for the LangGraph workflow.
  *
- * Runs three invocations:
- *   1. Partial prompt → expect TravelAgent → FollowUp (with elicit).
- *   2. Fully specified prompt → expect TravelAgent → FetchRecs ∥ FetchWeather → FollowUp.
- *   3. Continue intent (filling form) → expect TravelAgent → FollowUp.
+ * One invocation per intent path:
+ *   1. itineraryPlanning, slots missing → TravelAgent → FetchRecs ∥ FetchWeather → FollowUp (elicits)
+ *   2. itineraryPlanning, slots filled  → TravelAgent → FetchRecs ∥ FetchWeather → FollowUp (full plan)
+ *   3. researching                       → TravelAgent → FetchRecs → FollowUp
+ *   4. tripPreparation                   → TravelAgent → FetchWeather → FollowUp
+ *   5. general                           → TravelAgent → FollowUp
  */
 
 import { graph } from "../agent/graph.js";
@@ -13,10 +15,10 @@ import { closeRedis } from "../lib/redis.js";
 async function main(): Promise<void> {
   const userId = "ashwin";
 
-  console.log("\n=== Test 1: partial prompt (expect TravelAgent → FollowUp with elicit) ===");
+  console.log("\n=== Test 1: itineraryPlanning, slots missing (expect elicit) ===");
   const out1 = await graph.invoke({
     userId,
-    sessionId: "test-elicit",
+    sessionId: "test-1",
     userMessage: "Plan a trip to Bangalore",
   });
   console.log("intent:", out1.intent);
@@ -26,36 +28,53 @@ async function main(): Promise<void> {
   console.log("response:", out1.response?.slice(0, 120));
   console.log("elicit fields:", out1.elicit?.fields.map((f: { name: string }) => f.name));
 
-  console.log("\n=== Test 2: fully specified (expect TravelAgent → FetchRecs+FetchWeather → FollowUp) ===");
+  console.log("\n=== Test 2: itineraryPlanning, all slots present ===");
   const out2 = await graph.invoke({
     userId,
-    sessionId: "test-plan",
+    sessionId: "test-2",
     userMessage: "Plan a foodie trip to Bangalore for May 20-24",
     interests: ["food", "landmarks"],
   });
   console.log("intent:", out2.intent);
-  console.log("destination:", out2.destination);
-  console.log("dates:", out2.dates);
-  console.log("interests:", out2.interests);
   console.log("pois count:", out2.pois.length);
-  console.log("weather:", out2.weather?.condition, `${out2.weather?.high}°/${out2.weather?.low}°`);
+  console.log("weather:", out2.weather?.condition);
   console.log("response:", out2.response?.slice(0, 160));
-  console.log("suggestedActions:", out2.suggestedActions);
-  console.log("elicit (should be undefined):", out2.elicit);
+  console.log("elicit:", out2.elicit);
 
-  console.log("\n=== Test 3: continue intent (form submission) ===");
+  console.log("\n=== Test 3: researching ===");
   const out3 = await graph.invoke({
     userId,
-    sessionId: "test-continue",
-    userMessage: "Here's what I picked from the form.",
-    destination: "bangalore",
-    dates: { start: "2026-05-20", end: "2026-05-24" },
-    interests: ["food", "culture"],
+    sessionId: "test-3",
+    userMessage: "What are some interesting places to explore in Mumbai?",
+    destination: "mumbai",
   });
   console.log("intent:", out3.intent);
+  console.log("pois count:", out3.pois.length);
+  console.log("weather (should be undefined):", out3.weather);
   console.log("response:", out3.response?.slice(0, 160));
-  console.log("suggestedActions:", out3.suggestedActions);
-  console.log("elicit (should be undefined):", out3.elicit);
+
+  console.log("\n=== Test 4: tripPreparation ===");
+  const out4 = await graph.invoke({
+    userId,
+    sessionId: "test-4",
+    userMessage: "What should I pack for Barcelona in October?",
+    destination: "barcelona",
+    dates: { start: "2026-10-10", end: "2026-10-15" },
+  });
+  console.log("intent:", out4.intent);
+  console.log("pois count (should be 0):", out4.pois.length);
+  console.log("weather:", out4.weather?.condition);
+  console.log("response:", out4.response?.slice(0, 160));
+
+  console.log("\n=== Test 5: general ===");
+  const out5 = await graph.invoke({
+    userId,
+    sessionId: "test-5",
+    userMessage: "Thanks! Talk to you later.",
+  });
+  console.log("intent:", out5.intent);
+  console.log("pois count (should be 0):", out5.pois.length);
+  console.log("response:", out5.response?.slice(0, 160));
 
   await closeRedis();
   console.log("\nDone.");
