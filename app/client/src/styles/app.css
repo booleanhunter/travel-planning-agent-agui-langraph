@@ -80,15 +80,15 @@
   white-space: pre-wrap;
 }
 .msg-user .msg-bubble {
-  background: var(--primary);
-  color: white;
+  background: var(--color-teal-50);
+  border: 1px solid var(--color-teal-100);
+  color: var(--text);
   border-bottom-right-radius: 3px;
 }
 .msg-agent .msg-bubble {
-  background: var(--bg-muted);
+  background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 3px;
+  padding: 4px 0;
 }
 
 /* ---------- Tool row ---------- */
