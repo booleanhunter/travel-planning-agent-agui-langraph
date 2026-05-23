@@ -1,9 +1,9 @@
 import type { ReactNode, MouseEvent } from "react";
-import type { POI } from "../types";
+import type { PickedPoi } from "../types";
 
 interface Props {
-  picked: POI[];
-  onRemovePick: (id: string) => void;
+  picked: PickedPoi[];
+  onRemovePick: (poiId: string) => void;
   onSave: () => void;
   saving: boolean;
   savedAt: string | null;
@@ -20,8 +20,8 @@ export function PlanAccordion({ picked, onRemovePick, onSave, saving, savedAt, c
   const saveLabel = saving
     ? "Saving…"
     : savedAt
-      ? `Saved at ${savedAt} — save again`
-      : "Save this trip";
+      ? `Completed at ${savedAt}`
+      : "Mark as complete";
 
   return (
     <details className="plan-disclosure" open>
@@ -47,13 +47,13 @@ export function PlanAccordion({ picked, onRemovePick, onSave, saving, savedAt, c
           {picked.length > 0 && (
             <ol className="plan-strip">
               {picked.map((p) => (
-                <li key={p.id} className="plan-pin">
+                <li key={p.poiId} className="plan-pin">
                   <span className="plan-pin-name">{p.name}</span>
                   <button
                     type="button"
                     className="plan-pin-x"
                     aria-label={`Remove ${p.name}`}
-                    onClick={(e) => { stop(e); onRemovePick(p.id); }}
+                    onClick={(e) => { stop(e); onRemovePick(p.poiId); }}
                   >
                     ×
                   </button>

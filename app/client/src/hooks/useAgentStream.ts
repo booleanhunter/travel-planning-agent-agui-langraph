@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
-import type { POI, Weather, ElicitSpec, DotStatus, City } from "../types";
+import type { POI, Weather, ElicitSpec, DotStatus, City, PickedPoi } from "../types";
 
 interface ConversationTurn {
   role: "user" | "assistant";
@@ -13,7 +13,7 @@ interface AgentTurnInput {
   destination?: City;
   dates?: { start: string; end: string };
   interests?: string[];
-  pickedPoiIds?: string[];
+  pickedPois?: PickedPoi[];
 }
 
 interface AgentStream {
@@ -26,8 +26,8 @@ interface AgentStream {
   running: boolean;
   error: string | null;
   conversation: ConversationTurn[];
-  pickedIds: string[];
-  setPickedIds: React.Dispatch<React.SetStateAction<string[]>>;
+  pickedPois: PickedPoi[];
+  setPickedPois: React.Dispatch<React.SetStateAction<PickedPoi[]>>;
   submitTurn: (input: AgentTurnInput) => Promise<void>;
   resetCanvas: () => void;
 }
@@ -51,7 +51,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
-  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [pickedPois, setPickedPois] = useState<PickedPoi[]>([]);
   // Resolved slots from RouteIntent — carried forward to subsequent turns
   const [resolvedSlots, setResolvedSlots] = useState<{
     destination?: City;
@@ -72,6 +72,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     if (delta.destination !== undefined) setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
     if (delta.dates !== undefined) setResolvedSlots((s) => ({ ...s, dates: delta.dates as { start: string; end: string } }));
     if (delta.interests !== undefined) setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
+    // The agent can change the picked set via the updateItinerary tool — keep client in sync.
+    if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as PickedPoi[]);
     // Each node that returns a `response` field contributes a new assistant bubble.
     // (TravelAgent emits an acknowledgment, FollowUp emits the substantive reply.)
     if (typeof delta.response === "string" && delta.response.length > 0) {
@@ -88,7 +90,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     setSuggestedActions([]);
     setDots({});
     setConversation([]);
-    setPickedIds([]);
+    setPickedPois([]);
     setError(null);
     setResolvedSlots({});
     setSessionId(newSessionId());
@@ -115,8 +117,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
       if (input.destination) stateToSend.destination = input.destination;
       if (input.dates) stateToSend.dates = input.dates;
       if (input.interests?.length) stateToSend.interests = input.interests;
-      const effectivePicked = input.pickedPoiIds ?? pickedIds;
-      if (effectivePicked.length) stateToSend.pickedPoiIds = effectivePicked;
+      const effectivePicked = input.pickedPois ?? pickedPois;
+      if (effectivePicked.length) stateToSend.pickedPois = effectivePicked;
 
       agent.threadId = sessionId;
       agent.setMessages([
@@ -150,7 +152,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
         setRunning(false);
       }
     },
-    [applyDelta, conversation, sessionId, pickedIds, resolvedSlots],
+    [applyDelta, conversation, sessionId, pickedPois, resolvedSlots],
   );
 
   return {
@@ -163,8 +165,8 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     running,
     error,
     conversation,
-    pickedIds,
-    setPickedIds,
+    pickedPois,
+    setPickedPois,
     submitTurn,
     resetCanvas,
     sessionId,

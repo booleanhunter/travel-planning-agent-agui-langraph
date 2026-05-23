@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { POI, Weather, ElicitSpec, UserPreferences } from "../types.js";
+import type { POI, Weather, ElicitSpec, UserPreferences, PickedPoi } from "../types.js";
 
 /**
  * Agent state passed between nodes. Each turn is one-shot: the graph runs
@@ -17,7 +17,7 @@ export const AgentState = z.object({
   dates: z.object({ start: z.string(), end: z.string() }).optional(),
   interests: z.array(z.string()).default([]),
   preferences: z.custom<UserPreferences>().optional(),
-  pickedPoiIds: z.array(z.string()).default([]),
+  pickedPois: z.custom<PickedPoi[]>().default(() => []),
 
   // Outputs — populated by Fetch* and Finalize* nodes
   pois: z.custom<POI[]>().default(() => []),

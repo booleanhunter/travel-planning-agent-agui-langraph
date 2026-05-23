@@ -89,18 +89,21 @@ export function MemoryDrawer({ open, onClose, onLoadTrip }: Props) {
           <div className="drawer-section">
             <h3>Past trips</h3>
             {profile && profile.pastTrips.length > 0 ? (
-              profile.pastTrips.map((trip) => (
-                <div key={trip.tripId} className="past-trip" onClick={() => onLoadTrip(trip)}>
-                  <div className="past-trip-city">{trip.city}</div>
-                  <div className="past-trip-meta">
-                    {trip.dates ? `${trip.dates.start} → ${trip.dates.end}` : "no dates"} ·{" "}
-                    {trip.pickedPoiIds.length} places
+              profile.pastTrips.map((trip) => {
+                const placeNames = trip.pickedPois.map((p) => p.name).join(", ");
+                return (
+                  <div key={trip.tripId} className="past-trip" onClick={() => onLoadTrip(trip)}>
+                    <div className="past-trip-city">{trip.city}</div>
+                    <div className="past-trip-meta">
+                      {trip.dates ? `${trip.dates.start} → ${trip.dates.end}` : "no dates"} ·{" "}
+                      {trip.pickedPois.length} places
+                    </div>
+                    {placeNames && (
+                      <div className="past-trip-meta" style={{ marginTop: 4 }}>{placeNames}</div>
+                    )}
                   </div>
-                  {trip.summary && (
-                    <div className="past-trip-meta" style={{ marginTop: 4 }}>{trip.summary}</div>
-                  )}
-                </div>
-              ))
+                );
+              })
             ) : (
               <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
                 No saved trips yet. Click "Save this trip" once you've composed an itinerary.

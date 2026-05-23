@@ -1,9 +1,52 @@
 import { z } from "zod";
-import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from "@langchain/core/messages";
+import {
+  SystemMessage,
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  type BaseMessage,
+} from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
 import { getChatModel } from "../../lib/llm.js";
 import { appendTurn, getConversation } from "../../memory/ams-client.js";
+import { updateTripPickedPois } from "../../data/trip-store.js";
 import type { AgentStateType } from "../state.js";
-import type { ElicitField, ElicitSpec } from "../../types.js";
+import type { ElicitField, ElicitSpec, PickedPoi } from "../../types.js";
+
+// ----- Tool definition ----------------------------------------------------------------
+
+const updateItineraryArgsSchema = z.object({
+  pickedPois: z.array(z.object({
+    poiId: z.string(),
+    name: z.string(),
+  })).describe(
+    "The COMPLETE new set of picked POIs (replace semantics — not a delta). " +
+    "Derive by taking the current picks and applying whatever change the user asked for. " +
+    "Each entry must use a `poiId` that appears in the current candidate set.",
+  ),
+});
+
+const updateItineraryTool = tool(
+  async (input) => {
+    const args = input as z.infer<typeof updateItineraryArgsSchema>;
+    return { updated: true, count: args.pickedPois.length };
+  },
+  {
+    name: "updateItinerary",
+    description:
+      "Replace the user's current picked-places set with the given list. " +
+      "ONLY call this tool when the user's message NAMES specific places — examples: " +
+      "\"add Cubbon Park\", \"remove MTR\", \"I want to go to Indiranagar\", \"swap Koshy's for Karavalli\", \"clear my picks\". " +
+      "DO NOT call this tool just because the user asked to plan a trip, see places, get suggestions, or browse candidates. " +
+      "DO NOT auto-pick the candidates — the user picks them themselves via the UI or by naming them. " +
+      "DO NOT call this for small talk, thanks, questions, or generic conversation. " +
+      "Always pass the FULL new set, not a delta. " +
+      "Only use poiIds that appear in the current candidate set.",
+    schema: updateItineraryArgsSchema,
+  },
+);
+
+// ----- Structured output for the final response --------------------------------------
 
 const FollowUpOutput = z.object({
   textResponse: z.string().describe(
@@ -18,7 +61,15 @@ const FollowUpOutput = z.object({
   ),
 });
 
+// ----- System prompts -----------------------------------------------------------------
+
 function buildSystemPrompt(state: AgentStateType): string {
+  const candidateList = state.pois.length
+    ? state.pois.map((p) => `  - ${p.id}: ${p.name}`).join("\n")
+    : "  (none yet)";
+  const pickedList = state.pickedPois.length
+    ? state.pickedPois.map((p) => `  - ${p.poiId}: ${p.name}`).join("\n")
+    : "  (none picked yet)";
   return [
     "You are a senior travel supervisor reviewing the chat history above.",
     "Provide a final resolution based on everything discussed so far.",
@@ -27,12 +78,24 @@ function buildSystemPrompt(state: AgentStateType): string {
     "",
     "`suggestedActions` should be written in the user's first-person voice — what they might tap to send next, not instructions to the user.",
     "",
+    "Tool use rule for `updateItinerary`:",
+    "Call it ONLY when the user's message NAMES specific places to add, remove, swap, or clear.",
+    "Examples that SHOULD trigger a call: \"add Cubbon Park\", \"remove MTR\", \"swap Koshy's for Karavalli\".",
+    "Examples that MUST NOT trigger a call: \"plan a trip\", \"show me places\", \"suggest options\", \"what should I see\", small talk, thanks.",
+    "When called, pass the COMPLETE new picked set (replace semantics) using only poiIds from the candidate list below.",
+    "Otherwise do not call the tool.",
+    "",
     "Trip context so far:",
     `- Destination: ${state.destination ?? "not chosen"}`,
     `- Dates: ${state.dates ? `${state.dates.start} → ${state.dates.end}` : "not picked"}`,
     `- Interests: ${state.interests.length ? state.interests.join(", ") : "none stated"}`,
     `- Weather: ${state.weather ? `${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)` : "not looked up"}`,
-    `- Places surfaced: ${state.pois.length}`,
+    "",
+    "Candidate places this turn:",
+    candidateList,
+    "",
+    "Currently picked places:",
+    pickedList,
   ].join("\n");
 }
 
@@ -48,10 +111,6 @@ const INTEREST_OPTIONS = [
   { value: "culture",   label: "Arts & culture" },
 ];
 
-/**
- * Required slots per intent. Each intent's data fetch needs at least these.
- * `general` never elicits — it's small talk / form replies.
- */
 function requiredSlots(intent: AgentStateType["intent"]): Array<"destination" | "dates" | "interests"> {
   switch (intent) {
     case "researching":       return ["destination"];
@@ -78,7 +137,6 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
       ],
     });
   }
-
   if (needed.includes("dates") && !state.dates) {
     fields.push({
       name: "dates",
@@ -87,7 +145,6 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
       helpText: "Specific dates let me factor in weather. Skip if you're flexible.",
     });
   }
-
   if (needed.includes("interests") && !state.interests.length) {
     const memInterests = state.preferences?.recurringInterests ?? [];
     fields.push({
@@ -99,7 +156,6 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
       prefilledFromMemory: memInterests.length > 0,
     });
   }
-
   if (!fields.length) return undefined;
   return {
     message: "A few quick details so I can plan your day:",
@@ -110,7 +166,7 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
 // ----- The node -----------------------------------------------------------------------
 
 export async function followUp(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  console.log(`[follow-up] entry — intent=${state.intent} destination=${state.destination ?? "—"} pois=${state.pois.length} weather=${state.weather ? "yes" : "no"} ack=${state.response ? "yes" : "no"}`);
+  console.log(`[follow-up] entry — intent=${state.intent} destination=${state.destination ?? "—"} pois=${state.pois.length} weather=${state.weather ? "yes" : "no"} ack=${state.response ? "yes" : "no"} picked=${state.pickedPois.length}`);
 
   const elicit = buildElicit(state);
   console.log(`[follow-up] elicit — ${elicit ? `fields=[${elicit.fields.map((f) => f.name).join(",")}]` : "none"}`);
@@ -131,29 +187,87 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     messages.push(new AIMessage(state.response));  // TravelAgent's reply this turn
   }
 
-  const llm = getChatModel().withStructuredOutput(FollowUpOutput, { name: "follow_up" });
-  const out = await llm.invoke(messages);
+  // ----- Pass 1: tool-calling -----
+  const toolModel = getChatModel().bindTools([updateItineraryTool]);
+  const toolResponse = await toolModel.invoke(messages);
+
+  let nextPickedPois: PickedPoi[] | undefined;
+  const toolCalls = toolResponse.tool_calls ?? [];
+  // Safety net: gpt-4o-mini sometimes auto-picks the whole candidate list on
+  // generic prompts like "plan a trip". Only honor a tool call if the user's
+  // own message actually mentioned a place (adding case) — or if they're
+  // reducing the set (removing/clearing always allowed).
+  const userMsg = state.userMessage.toLowerCase();
+  const userNamedAnyPlace = state.pois.some((p) => userMsg.includes(p.name.toLowerCase()));
+
+  for (const tc of toolCalls) {
+    if (tc.name === "updateItinerary") {
+      const parsed = updateItineraryArgsSchema.safeParse(tc.args);
+      if (!parsed.success) {
+        console.error("[follow-up] tool args failed validation:", parsed.error.message);
+        continue;
+      }
+      const proposed = parsed.data.pickedPois;
+
+      // No-op guard.
+      const sameAsCurrent =
+        proposed.length === state.pickedPois.length &&
+        proposed.every((p, i) => p.poiId === state.pickedPois[i]?.poiId);
+      if (sameAsCurrent) {
+        console.log("[follow-up] tool updateItinerary — no-op (LLM emitted same set); ignored");
+        continue;
+      }
+
+      // Adding-without-mention guard.
+      const isAdding = proposed.length > state.pickedPois.length;
+      if (isAdding && !userNamedAnyPlace) {
+        console.log("[follow-up] tool updateItinerary — rejected: user did not name any candidate place but LLM tried to add picks");
+        continue;
+      }
+
+      nextPickedPois = proposed;
+      console.log(`[follow-up] tool updateItinerary — picked=${nextPickedPois.length} (${nextPickedPois.map((p) => p.name).join(", ")})`);
+      await updateTripPickedPois(state.userId, state.sessionId, nextPickedPois)
+        .catch((err) => console.error("[follow-up] updateTripPickedPois failed:", (err as Error).message));
+    }
+  }
+
+  // If a tool fired, feed the assistant message + ToolMessage back so the
+  // structured-output pass sees what was just done.
+  const messagesForFinal: BaseMessage[] = toolCalls.length
+    ? [
+        ...messages,
+        toolResponse,
+        ...toolCalls.map((tc) =>
+          new ToolMessage({
+            tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
+            content: JSON.stringify({ updated: true }),
+          }),
+        ),
+      ]
+    : messages;
+
+  // ----- Pass 2: structured response -----
+  const structuredModel = getChatModel().withStructuredOutput(FollowUpOutput, { name: "follow_up" });
+  const out = await structuredModel.invoke(messagesForFinal);
   console.log(`[follow-up] LLM — suggestedActions=[${out.suggestedActions.join(",")}]`);
   console.log(`[follow-up] reply: "${out.textResponse.slice(0, 120)}${out.textResponse.length > 120 ? "…" : ""}"`);
 
-  // Mirror the turn to AMS working memory (fire-and-forget). Both assistant
-  // messages from this turn — TravelAgent's reply (state.response, still the
-  // ack at this point since FollowUp hasn't returned yet) and FollowUp's
-  // resolution — get persisted so subsequent turns see the full transcript.
+  // Persist this turn to AMS working memory (fire-and-forget).
   const turnMessages: Array<{ role: "user" | "assistant"; content: string }> = [
     { role: "user", content: state.userMessage },
   ];
-  if (state.response) {
-    turnMessages.push({ role: "assistant", content: state.response });  // TravelAgent's reply
-  }
-  turnMessages.push({ role: "assistant", content: out.textResponse });   // FollowUp's resolution
+  if (state.response) turnMessages.push({ role: "assistant", content: state.response });
+  turnMessages.push({ role: "assistant", content: out.textResponse });
 
   appendTurn(state.sessionId, state.userId, turnMessages)
     .catch((err) => console.error("[appendTurn] failed:", (err as Error).message));
 
-  return {
-    //response: out.textResponse,
+  const patch: Partial<AgentStateType> = {
+    response: out.textResponse,
     suggestedActions: out.suggestedActions,
     elicit,
   };
+  if (nextPickedPois) patch.pickedPois = nextPickedPois;
+  return patch;
 }
