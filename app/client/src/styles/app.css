@@ -1,0 +1,331 @@
+/* ---------- Layout shell ---------- */
+
+.app {
+  display: grid;
+  grid-template-rows: var(--header-h) 1fr;
+  height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-user {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+}
+
+.hamburger {
+  background: none; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 10px; font-size: 16px; color: var(--text-muted);
+}
+.hamburger:hover { border-color: var(--border-strong); color: var(--text); }
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  overflow: hidden;
+}
+
+/* ---------- Canvas ---------- */
+
+.canvas {
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--bg-muted);
+}
+.canvas-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-muted); text-align: center;
+}
+.canvas-empty h2 { font-size: 18px; margin: 0 0 8px; color: var(--text); }
+.canvas-empty p { margin: 0; max-width: 360px; }
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  display: grid; grid-template-rows: 1fr auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  overflow: hidden;
+}
+.sidebar-messages {
+  overflow-y: auto;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.sidebar-input-wrap {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  background: var(--bg);
+}
+
+/* ---------- Chat message ---------- */
+
+.msg { display: flex; gap: 8px; }
+.msg-user { justify-content: flex-end; }
+.msg-bubble {
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  max-width: 85%;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+}
+.msg-user .msg-bubble {
+  background: var(--primary);
+  color: white;
+  border-bottom-right-radius: 3px;
+}
+.msg-agent .msg-bubble {
+  background: var(--bg-muted);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 3px;
+}
+
+/* ---------- Tool row ---------- */
+
+.toolrow-list { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
+.toolrow {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-family: var(--font-mono); color: var(--text-muted);
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.toolrow-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border-strong);
+}
+.toolrow-dot.pending { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+.toolrow-dot.done    { background: var(--green); }
+.toolrow-dot.error   { background: var(--red); }
+@keyframes pulse { 50% { opacity: 0.4; } }
+
+/* ---------- Prompt input ---------- */
+
+.prompt-form { display: flex; gap: 8px; }
+.prompt-input {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  outline: none;
+  background: var(--bg);
+}
+.prompt-input:focus { border-color: var(--primary); }
+.prompt-submit {
+  background: var(--primary); color: white;
+  border: none; border-radius: var(--radius);
+  padding: 8px 16px;
+  font-weight: 500;
+}
+.prompt-submit:hover { background: var(--primary-dark); }
+.prompt-submit:disabled { background: var(--border-strong); cursor: not-allowed; }
+
+/* ---------- Elicit chip card ---------- */
+
+.elicit-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.elicit-message { font-weight: 500; margin: 0 0 12px; font-size: 13px; }
+.elicit-banner {
+  background: var(--primary-light); color: var(--primary-dark);
+  padding: 6px 10px; border-radius: var(--radius);
+  font-size: 12px; margin-bottom: 12px;
+}
+.elicit-field { margin-bottom: 14px; }
+.elicit-field label {
+  display: block; font-size: 12px; font-weight: 500;
+  margin-bottom: 6px; color: var(--text); display: flex; align-items: center; gap: 6px;
+}
+.elicit-field .from-memory {
+  font-size: 10px; padding: 1px 6px;
+  background: var(--primary-light); color: var(--primary-dark);
+  border-radius: var(--radius); font-weight: 500;
+}
+.elicit-help { font-size: 12px; color: var(--text-muted); margin: -2px 0 6px; }
+.elicit-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.elicit-chip {
+  padding: 6px 10px; border-radius: var(--radius);
+  border: 1px solid var(--border-strong); background: var(--bg);
+  font-size: 12px;
+}
+.elicit-chip.selected {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+.elicit-date {
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 6px 8px; background: var(--bg);
+}
+.elicit-submit {
+  background: var(--primary); color: white;
+  border: none; border-radius: var(--radius);
+  padding: 8px 14px; font-weight: 500;
+  width: 100%; margin-top: 4px;
+}
+
+/* ---------- Follow-up chips ---------- */
+
+.followup-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
+.followup-chip {
+  font-size: 12px; padding: 5px 10px;
+  background: var(--bg); color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+}
+.followup-chip:hover { background: var(--primary); color: white; }
+
+/* ---------- POI Grid ---------- */
+
+.section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-soft); font-weight: 600; margin: 16px 0 8px;
+}
+
+.poi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.poi-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden; cursor: pointer;
+  transition: border-color 0.1s;
+  display: flex; flex-direction: column;
+}
+.poi-card:hover { border-color: var(--border-strong); }
+.poi-card.picked { border-color: var(--primary); border-width: 2px; }
+.poi-photo {
+  height: 120px; background: var(--bg-muted);
+  background-size: cover; background-position: center;
+}
+.poi-info { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.poi-name { font-size: 13px; font-weight: 600; margin: 0; }
+.poi-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; }
+.poi-rating { font-family: var(--font-mono); }
+.poi-category {
+  display: inline-block; padding: 1px 6px;
+  background: var(--bg-muted); border-radius: var(--radius);
+  font-size: 10px; text-transform: capitalize;
+}
+.poi-desc { font-size: 12px; color: var(--text-muted); }
+.poi-check {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-muted);
+  font-size: 12px;
+}
+
+/* ---------- Composed itinerary ---------- */
+
+.composed {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px; margin-top: 16px;
+}
+.composed-empty { color: var(--text-muted); font-size: 13px; font-style: italic; }
+.composed-list { display: flex; flex-direction: column; gap: 8px; }
+.composed-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+}
+.composed-row-num { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); width: 24px; }
+.composed-row-name { flex: 1; font-size: 13px; }
+.composed-row-x {
+  background: none; border: none; color: var(--text-soft);
+  font-size: 16px; padding: 0 4px;
+}
+.composed-row-x:hover { color: var(--red); }
+
+/* ---------- Weather ---------- */
+
+.weather-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 13px;
+}
+.weather-temp { font-family: var(--font-mono); font-weight: 600; font-size: 18px; }
+.weather-cond { color: var(--text-muted); }
+.weather-rain { font-size: 11px; color: var(--text-soft); }
+
+/* ---------- Map ---------- */
+
+.route-map {
+  height: 280px; margin-top: 16px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.leaflet-container { height: 100%; }
+
+/* ---------- Memory drawer ---------- */
+
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(15, 20, 30, 0.4);
+  z-index: 100;
+}
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: 360px; background: var(--bg);
+  z-index: 101; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+}
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.drawer-close {
+  background: none; border: none; font-size: 18px; color: var(--text-muted);
+}
+.drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
+.drawer-section { margin-bottom: 20px; }
+.drawer-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-soft); font-weight: 600; margin: 0 0 8px;
+}
+.drawer-row {
+  display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.drawer-row:last-child { border-bottom: none; }
+.drawer-row-label { color: var(--text-muted); }
+.drawer-row-value { font-weight: 500; }
+.past-trip {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 8px; cursor: pointer;
+  transition: border-color 0.1s;
+}
+.past-trip:hover { border-color: var(--border-strong); }
+.past-trip-city { font-weight: 600; text-transform: capitalize; }
+.past-trip-meta { font-size: 12px; color: var(--text-muted); }
+
+/* ---------- Save trip button ---------- */
+
+.save-trip {
+  background: var(--primary); color: white;
+  border: none; border-radius: var(--radius);
+  padding: 8px 14px;
+  margin-top: 16px;
+  font-weight: 500;
+  width: 100%;
+}
+.save-trip:hover { background: var(--primary-dark); }
+.save-trip:disabled { background: var(--border-strong); cursor: not-allowed; }
