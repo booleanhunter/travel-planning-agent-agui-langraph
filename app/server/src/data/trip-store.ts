@@ -9,7 +9,7 @@
  */
 
 import { getRedis } from "../lib/redis.js";
-import type { PickedPoi, PastTrip, City } from "../types.js";
+import type { POI, PastTrip, City } from "../types.js";
 
 interface TripDraftUpsert {
   city?: City;
@@ -57,7 +57,7 @@ export async function ensureTripDraft(
 export async function updateTripPickedPois(
   userId: string,
   tripId: string,
-  pickedPois: PickedPoi[],
+  pickedPois: POI[],
 ): Promise<void> {
   const redis = await getRedis();
   const now = new Date().toISOString();
@@ -114,7 +114,7 @@ export async function listPastTrips(userId: string): Promise<PastTrip[]> {
 
 function hashToTrip(tripId: string, h: Record<string, string>): PastTrip | null {
   if (!h || !h.tripId) return null;
-  let pickedPois: PickedPoi[] = [];
+  let pickedPois: POI[] = [];
   try {
     pickedPois = JSON.parse(h.pickedPois ?? "[]");
   } catch {
