@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { POI, Weather, ElicitSpec, UserPreferences } from '../types.js';
+import type { POI, Weather, ElicitSpec, UserPreferences } from '../../../types.js';
 
 /**
  * Agent state passed between nodes. Each turn is one-shot: the graph runs

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { EventType } from '@ag-ui/core';
-import { graph, APP_NODES } from '../agent/graph.js';
+import { graph, APP_NODES } from '../agentic-trip-workflow/graph.js';
 
 const router = Router();
 

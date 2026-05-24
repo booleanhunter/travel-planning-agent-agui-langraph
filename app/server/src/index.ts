@@ -2,10 +2,10 @@ import express from 'express';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
-import { ensurePoiIndex } from './data/pois-redis.js';
+import { ensurePoiIndex } from './modules/places/domain/places-service.js';
 import { closeRedis } from './lib/redis.js';
-import chatRouter from './routes/chat.js';
-import userRouter from './routes/user.js';
+import chatRouter from './modules/ai/api/chat.js';
+import tripsRouter from './modules/trips/api/trips-routes.js';
 
 const app = express();
 
@@ -14,7 +14,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 app.use('/api/chat', chatRouter);
-app.use('/api/user', userRouter);
+app.use('/api/user', tripsRouter);
 
 app.get('/api/health', (_req, res) => {
     res.json({ ok: true, app: 'trip-itinerary-builder' });
@@ -23,7 +23,7 @@ app.get('/api/health', (_req, res) => {
 async function start(): Promise<void> {
     await ensurePoiIndex();
     app.listen(config.serverPort, () => {
-        console.log(`[server] listening on http://localhost:${config.serverPort}`);
+        console.log(`🚀 [server] listening on http://localhost:${config.serverPort}`);
     });
 }
 
