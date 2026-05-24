@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     console.log('response:', out1.response?.slice(0, 120));
     console.log(
         'elicit fields:',
-        out1.elicit?.fields.map((f: { name: string }) => f.name),
+        out1.elicit ? Object.keys(out1.elicit.requestedSchema.properties) : undefined,
     );
 
     console.log('\n=== Test 2: itineraryPlanning, all slots present ===');

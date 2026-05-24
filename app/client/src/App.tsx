@@ -89,11 +89,9 @@ export function App() {
     const submitElicit = useCallback(
         (values: Record<string, unknown>) => {
             const destination = values.destination as City | undefined;
-            const datesRaw = values.dates as { start?: string; end?: string } | undefined;
-            const dates =
-                datesRaw?.start && datesRaw?.end
-                    ? { start: datesRaw.start, end: datesRaw.end }
-                    : undefined;
+            const startDate = values.startDate as string | undefined;
+            const endDate = values.endDate as string | undefined;
+            const dates = startDate && endDate ? { start: startDate, end: endDate } : undefined;
             const interests = values.interests as string[] | undefined;
 
             const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
