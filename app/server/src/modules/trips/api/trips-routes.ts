@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { searchUserPreferences, getConversation } from '../memory/ams-client.js';
-import { getTrip, listPastTrips, markTripComplete } from '../data/trip-store.js';
+import { getPreferences, getConversation } from '../../user/domain/user-service.js';
+import { getTrip, listPastTrips, markComplete } from '../domain/trips-service.js';
 
 const router = Router();
 
@@ -12,7 +12,7 @@ router.get('/profile', async (req, res) => {
     const userId = (req.query.userId as string) ?? 'ashwin';
     try {
         const [preferences, pastTrips] = await Promise.all([
-            searchUserPreferences(userId),
+            getPreferences(userId),
             listPastTrips(userId),
         ]);
         res.json({ userId, preferences: preferences ?? null, pastTrips });
@@ -59,7 +59,7 @@ router.post('/save-trip', async (req, res) => {
         return;
     }
     try {
-        const trip = await markTripComplete(userId, tripId);
+        const trip = await markComplete(userId, tripId);
         if (!trip) {
             res.status(404).json({ error: 'trip not found — make at least one pick first' });
             return;

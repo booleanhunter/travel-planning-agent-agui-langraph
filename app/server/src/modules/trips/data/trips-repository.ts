@@ -8,8 +8,8 @@
  * Convention: tripId == sessionId (one trip per session in v1).
  */
 
-import { getRedis } from '../lib/redis.js';
-import type { POI, PastTrip, City } from '../types.js';
+import { getRedis } from '../../../lib/redis.js';
+import type { POI, PastTrip, City } from '../../../types.js';
 
 interface TripDraftUpsert {
     city?: City;

@@ -1,5 +1,5 @@
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
-import { config } from '../config.js';
+import { config } from '../../../config.js';
 
 let chatModel: ChatOpenAI | null = null;
 let embeddings: OpenAIEmbeddings | null = null;

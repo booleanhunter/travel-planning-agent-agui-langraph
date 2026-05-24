@@ -1,4 +1,4 @@
-import type { City, Weather } from '../types.js';
+import type { City, Weather } from '../../../types.js';
 
 type Forecast = Omit<Weather, 'city' | 'month'>;
 

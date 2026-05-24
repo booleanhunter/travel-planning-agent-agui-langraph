@@ -10,8 +10,8 @@
 
 import { config } from '../config.js';
 import { closeRedis } from '../lib/redis.js';
-import { embedToBuffer } from '../lib/llm.js';
-import { ensurePoiIndex, upsertPoi } from '../data/pois-redis.js';
+import { embedToBuffer } from '../modules/ai/helpers/llm.js';
+import { ensurePoiIndex, upsertPoi } from '../modules/places/domain/places-service.js';
 import type { City, POI, POICategory } from '../types.js';
 
 const PLACES_BASE = 'https://places.googleapis.com/v1';

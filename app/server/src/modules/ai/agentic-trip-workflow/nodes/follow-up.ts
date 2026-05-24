@@ -6,12 +6,11 @@ import {
     ToolMessage,
     type BaseMessage,
 } from '@langchain/core/messages';
-import { tool } from '@langchain/core/tools';
-import { getChatModel } from '../../lib/llm.js';
-import { appendTurn, getConversation } from '../../memory/ams-client.js';
-import { updateTripPickedPois } from '../../data/trip-store.js';
+import { getChatModel } from '../../helpers/llm.js';
+import { appendTurn, getConversation } from '../../../user/domain/user-service.js';
 import type { AgentStateType } from '../state.js';
-import type { ElicitField, ElicitSpec, POI } from '../../types.js';
+import type { ElicitField, ElicitSpec, POI } from '../../../../types.js';
+import { makeUpdateItineraryTool } from '../tools.js';
 
 // ----- Structured output for the final response --------------------------------------
 
@@ -144,7 +143,7 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
 
 export async function followUp(state: AgentStateType): Promise<Partial<AgentStateType>> {
     console.log(
-        `[follow-up] entry — intent=${state.intent} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} ack=${state.response ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
+        `\n💬 [follow-up] entry — intent=${state.intent} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} ack=${state.response ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
     );
 
     const elicit = buildElicit(state);
@@ -170,49 +169,9 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
 
     // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
     let appliedPicks: POI[] | undefined;
-    const updateItineraryTool = tool(
-        async ({ pickedPois: minimal }: { pickedPois: Array<{ poiId: string; name: string }> }) => {
-            // The LLM gives us {poiId, name}. Materialize full POI records by
-            // looking up first in this turn's candidates, then in the previously
-            // committed picks (covers cross-turn references).
-            const priorById = new Map(state.pickedPois.map((p) => [p.id, p]));
-            const enriched: POI[] = [];
-            for (const m of minimal) {
-                const fromCurrent = state.pois.find((p) => p.id === m.poiId);
-                if (fromCurrent) {
-                    enriched.push(fromCurrent);
-                    continue;
-                }
-                const prior = priorById.get(m.poiId);
-                if (prior) {
-                    enriched.push(prior);
-                    continue;
-                }
-                console.warn(
-                    `[follow-up] tool updateItinerary — no POI data for id=${m.poiId} (${m.name}), dropping`,
-                );
-            }
-            await updateTripPickedPois(state.userId, state.sessionId, enriched);
-            appliedPicks = enriched;
-            console.log(
-                `[follow-up] tool updateItinerary — wrote ${enriched.length} picks (${enriched.map((p) => p.name).join(', ')})`,
-            );
-            return { updated: true, count: enriched.length };
-        },
-        {
-            name: 'updateItinerary',
-            description:
-                "Replace the user's current picked-places set with the given list. " +
-                "ONLY call this tool when the user's message NAMES specific places — examples: " +
-                '"add Cubbon Park", "remove MTR", "swap Koshy\'s for Karavalli", "clear my picks". ' +
-                'DO NOT call this for generic requests, browsing, small talk, or thanks. ' +
-                'DO NOT auto-pick the candidates. ' +
-                'Always pass the FULL new set, not a delta. Use poiIds from the candidate list.',
-            schema: z.object({
-                pickedPois: z.array(z.object({ poiId: z.string(), name: z.string() })),
-            }),
-        },
-    );
+    const updateItineraryTool = makeUpdateItineraryTool(state, (picks) => {
+        appliedPicks = picks;
+    });
 
     const toolModel = getChatModel().bindTools([updateItineraryTool]);
     const toolResponse = await toolModel.invoke(messages);

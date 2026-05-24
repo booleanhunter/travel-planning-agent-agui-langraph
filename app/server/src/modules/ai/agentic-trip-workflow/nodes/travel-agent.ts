@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
-import { getChatModel } from '../../lib/llm.js';
-import { searchUserPreferences, getConversation } from '../../memory/ams-client.js';
-import { ensureTripDraft } from '../../data/trip-store.js';
+import { getChatModel } from '../../helpers/llm.js';
+import { getPreferences, getConversation } from '../../../user/domain/user-service.js';
+import { ensureDraft } from '../../../trips/domain/trips-service.js';
 import type { AgentStateType } from '../state.js';
 
 const TravelAgentOutput = z.object({
@@ -53,11 +53,11 @@ Resolve relative dates against today (${today}). Return null for any slot not st
 
 export async function travelAgent(state: AgentStateType): Promise<Partial<AgentStateType>> {
     console.log(
-        `[travel-agent] turn — session=${state.sessionId} user=${state.userId} msg="${state.userMessage.slice(0, 80)}"`,
+        `\n🧭 [travel-agent] turn — session=${state.sessionId} user=${state.userId} msg="${state.userMessage.slice(0, 80)}"`,
     );
 
     const [prefs, conv] = await Promise.all([
-        searchUserPreferences(state.userId).catch(() => undefined),
+        getPreferences(state.userId).catch(() => undefined),
         getConversation(state.sessionId).catch(() => null),
     ]);
     console.log(
@@ -98,13 +98,11 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
 
     // Upsert a draft trip record in Redis with whatever we know so far.
     // Idempotent — safe to call every turn.
-    await ensureTripDraft(state.userId, state.sessionId, {
+    await ensureDraft(state.userId, state.sessionId, {
         city: resolvedDestination,
         startDate: resolvedDates?.start,
         endDate: resolvedDates?.end,
-    }).catch((err) =>
-        console.error('[travel-agent] ensureTripDraft failed:', (err as Error).message),
-    );
+    }).catch((err) => console.error('[travel-agent] ensureDraft failed:', (err as Error).message));
 
     return {
         intent: out.intent,
