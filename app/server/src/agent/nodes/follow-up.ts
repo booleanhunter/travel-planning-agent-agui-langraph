@@ -1,235 +1,264 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
-  SystemMessage,
-  HumanMessage,
-  AIMessage,
-  ToolMessage,
-  type BaseMessage,
-} from "@langchain/core/messages";
-import { tool } from "@langchain/core/tools";
-import { getChatModel } from "../../lib/llm.js";
-import { appendTurn, getConversation } from "../../memory/ams-client.js";
-import { updateTripPickedPois } from "../../data/trip-store.js";
-import type { AgentStateType } from "../state.js";
-import type { ElicitField, ElicitSpec, POI } from "../../types.js";
+    SystemMessage,
+    HumanMessage,
+    AIMessage,
+    ToolMessage,
+    type BaseMessage,
+} from '@langchain/core/messages';
+import { tool } from '@langchain/core/tools';
+import { getChatModel } from '../../lib/llm.js';
+import { appendTurn, getConversation } from '../../memory/ams-client.js';
+import { updateTripPickedPois } from '../../data/trip-store.js';
+import type { AgentStateType } from '../state.js';
+import type { ElicitField, ElicitSpec, POI } from '../../types.js';
 
 // ----- Structured output for the final response --------------------------------------
 
 const FollowUpOutput = z.object({
-  textResponse: z.string().describe(
-    "The final resolution for the user. Build on the agent's most recent reply; reference what's known so far (destination, dates, places, weather).",
-  ),
-  suggestedActions: z.array(z.string()).describe(
-    'Short follow-up chips the USER might tap to send as their next message — written in the user\'s first-person voice. ' +
-    'Each chip should read like something the user would naturally type or click. ' +
-    'Good examples: "What should I pack?", "Make it more relaxed", "Save this trip", "Show me only cultural spots", "Plan a 3-day itinerary". ' +
-    'Bad examples (do NOT use these patterns): "Share your interests", "Request places", "Pick a destination", "Get packing tips" — these are imperatives directed at the user, not user-voiced prompts. ' +
-    "Return an empty array if no natural next step exists.",
-  ),
+    textResponse: z
+        .string()
+        .describe(
+            "The final resolution for the user. Build on the agent's most recent reply; reference what's known so far (destination, dates, places, weather).",
+        ),
+    suggestedActions: z
+        .array(z.string())
+        .describe(
+            "Short follow-up chips the USER might tap to send as their next message — written in the user's first-person voice. " +
+                'Each chip should read like something the user would naturally type or click. ' +
+                'Good examples: "What should I pack?", "Make it more relaxed", "Save this trip", "Show me only cultural spots", "Plan a 3-day itinerary". ' +
+                'Bad examples (do NOT use these patterns): "Share your interests", "Request places", "Pick a destination", "Get packing tips" — these are imperatives directed at the user, not user-voiced prompts. ' +
+                'Return an empty array if no natural next step exists.',
+        ),
 });
 
 // ----- System prompts -----------------------------------------------------------------
 
 function buildSystemPrompt(state: AgentStateType): string {
-  const candidateList = state.pois.length
-    ? state.pois.map((p) => `  - ${p.id}: ${p.name}`).join("\n")
-    : "  (none yet)";
-  const pickedList = state.pickedPois.length
-    ? state.pickedPois.map((p) => `  - ${p.id}: ${p.name}`).join("\n")
-    : "  (none picked yet)";
-  return [
-    "You are a senior travel supervisor reviewing the chat history above.",
-    "Provide a final resolution based on everything discussed so far.",
-    "Build on the agent's most recent reply — do not repeat or contradict it,",
-    "and do not ask for information already answered or visible in the conversation.",
-    "",
-    "`suggestedActions` should be written in the user's first-person voice — what they might tap to send next, not instructions to the user.",
-    "",
-    "Tool use rule for `updateItinerary`:",
-    "Call it ONLY when the user's message NAMES specific places to add, remove, swap, or clear.",
-    "Examples that SHOULD trigger a call: \"add Cubbon Park\", \"remove MTR\", \"swap Koshy's for Karavalli\".",
-    "Examples that MUST NOT trigger a call: \"plan a trip\", \"show me places\", \"suggest options\", \"what should I see\", small talk, thanks.",
-    "When called, pass the COMPLETE new picked set (replace semantics) using only poiIds from the candidate list below.",
-    "Otherwise do not call the tool.",
-    "",
-    "Trip context so far:",
-    `- Destination: ${state.destination ?? "not chosen"}`,
-    `- Dates: ${state.dates ? `${state.dates.start} → ${state.dates.end}` : "not picked"}`,
-    `- Interests: ${state.interests.length ? state.interests.join(", ") : "none stated"}`,
-    `- Weather: ${state.weather ? `${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)` : "not looked up"}`,
-    "",
-    "Candidate places this turn:",
-    candidateList,
-    "",
-    "Currently picked places:",
-    pickedList,
-  ].join("\n");
+    const candidateList = state.pois.length
+        ? state.pois.map((p) => `  - ${p.id}: ${p.name}`).join('\n')
+        : '  (none yet)';
+    const pickedList = state.pickedPois.length
+        ? state.pickedPois.map((p) => `  - ${p.id}: ${p.name}`).join('\n')
+        : '  (none picked yet)';
+    return [
+        'You are a senior travel supervisor reviewing the chat history above.',
+        'Provide a final resolution based on everything discussed so far.',
+        "Build on the agent's most recent reply — do not repeat or contradict it,",
+        'and do not ask for information already answered or visible in the conversation.',
+        '',
+        "`suggestedActions` should be written in the user's first-person voice — what they might tap to send next, not instructions to the user.",
+        '',
+        'Tool use rule for `updateItinerary`:',
+        "Call it ONLY when the user's message NAMES specific places to add, remove, swap, or clear.",
+        'Examples that SHOULD trigger a call: "add Cubbon Park", "remove MTR", "swap Koshy\'s for Karavalli".',
+        'Examples that MUST NOT trigger a call: "plan a trip", "show me places", "suggest options", "what should I see", small talk, thanks.',
+        'When called, pass the COMPLETE new picked set (replace semantics) using only poiIds from the candidate list below.',
+        'Otherwise do not call the tool.',
+        '',
+        'Trip context so far:',
+        `- Destination: ${state.destination ?? 'not chosen'}`,
+        `- Dates: ${state.dates ? `${state.dates.start} → ${state.dates.end}` : 'not picked'}`,
+        `- Interests: ${state.interests.length ? state.interests.join(', ') : 'none stated'}`,
+        `- Weather: ${state.weather ? `${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)` : 'not looked up'}`,
+        '',
+        'Candidate places this turn:',
+        candidateList,
+        '',
+        'Currently picked places:',
+        pickedList,
+    ].join('\n');
 }
 
 // ----- Elicit logic (mechanical, intent-aware) ----------------------------------------
 
 const INTEREST_OPTIONS = [
-  { value: "food",      label: "Food & restaurants" },
-  { value: "landmarks", label: "Famous landmarks" },
-  { value: "offbeat",   label: "Off the beaten path" },
-  { value: "slow",      label: "Slow & easygoing" },
-  { value: "outdoors",  label: "Outdoors & nature" },
-  { value: "nightlife", label: "Nightlife & social" },
-  { value: "culture",   label: "Arts & culture" },
+    { value: 'food', label: 'Food & restaurants' },
+    { value: 'landmarks', label: 'Famous landmarks' },
+    { value: 'offbeat', label: 'Off the beaten path' },
+    { value: 'slow', label: 'Slow & easygoing' },
+    { value: 'outdoors', label: 'Outdoors & nature' },
+    { value: 'nightlife', label: 'Nightlife & social' },
+    { value: 'culture', label: 'Arts & culture' },
 ];
 
-function requiredSlots(intent: AgentStateType["intent"]): Array<"destination" | "dates" | "interests"> {
-  switch (intent) {
-    case "researching":       return ["destination"];
-    case "tripPreparation":   return ["destination", "dates"];
-    case "itineraryPlanning": return ["destination", "dates", "interests"];
-    case "general":           return [];
-  }
+function requiredSlots(
+    intent: AgentStateType['intent'],
+): Array<'destination' | 'dates' | 'interests'> {
+    switch (intent) {
+        case 'researching':
+            return ['destination'];
+        case 'tripPreparation':
+            return ['destination', 'dates'];
+        case 'itineraryPlanning':
+            return ['destination', 'dates', 'interests'];
+        case 'general':
+            return [];
+    }
 }
 
 function buildElicit(state: AgentStateType): ElicitSpec | undefined {
-  const needed = requiredSlots(state.intent);
-  const fields: ElicitField[] = [];
+    const needed = requiredSlots(state.intent);
+    const fields: ElicitField[] = [];
 
-  if (needed.includes("destination") && !state.destination) {
-    fields.push({
-      name: "destination",
-      type: "enum",
-      label: "Where to?",
-      required: true,
-      options: [
-        { value: "bangalore", label: "Bangalore" },
-        { value: "mumbai",    label: "Mumbai" },
-        { value: "barcelona", label: "Barcelona" },
-      ],
-    });
-  }
-  if (needed.includes("dates") && !state.dates) {
-    fields.push({
-      name: "dates",
-      type: "date-range",
-      label: "When?",
-      helpText: "Specific dates let me factor in weather. Skip if you're flexible.",
-    });
-  }
-  if (needed.includes("interests") && !state.interests.length) {
-    const memInterests = state.preferences?.recurringInterests ?? [];
-    fields.push({
-      name: "interests",
-      type: "multi-enum",
-      label: "What are you in the mood for?",
-      options: INTEREST_OPTIONS,
-      default: memInterests,
-      prefilledFromMemory: memInterests.length > 0,
-    });
-  }
-  if (!fields.length) return undefined;
-  return {
-    message: "A few quick details so I can plan your day:",
-    fields,
-  };
+    if (needed.includes('destination') && !state.destination) {
+        fields.push({
+            name: 'destination',
+            type: 'enum',
+            label: 'Where to?',
+            required: true,
+            options: [
+                { value: 'bangalore', label: 'Bangalore' },
+                { value: 'mumbai', label: 'Mumbai' },
+                { value: 'barcelona', label: 'Barcelona' },
+            ],
+        });
+    }
+    if (needed.includes('dates') && !state.dates) {
+        fields.push({
+            name: 'dates',
+            type: 'date-range',
+            label: 'When?',
+            helpText: "Specific dates let me factor in weather. Skip if you're flexible.",
+        });
+    }
+    if (needed.includes('interests') && !state.interests.length) {
+        const memInterests = state.preferences?.recurringInterests ?? [];
+        fields.push({
+            name: 'interests',
+            type: 'multi-enum',
+            label: 'What are you in the mood for?',
+            options: INTEREST_OPTIONS,
+            default: memInterests,
+            prefilledFromMemory: memInterests.length > 0,
+        });
+    }
+    if (!fields.length) return undefined;
+    return {
+        message: 'A few quick details so I can plan your day:',
+        fields,
+    };
 }
 
 // ----- The node -----------------------------------------------------------------------
 
 export async function followUp(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  console.log(`[follow-up] entry — intent=${state.intent} destination=${state.destination ?? "—"} pois=${state.pois.length} weather=${state.weather ? "yes" : "no"} ack=${state.response ? "yes" : "no"} picked=${state.pickedPois.length}`);
-
-  const elicit = buildElicit(state);
-  console.log(`[follow-up] elicit — ${elicit ? `fields=[${elicit.fields.map((f) => f.name).join(",")}]` : "none"}`);
-
-  // Load prior conversation from AMS so the supervisor sees the full chat history.
-  const conv = await getConversation(state.sessionId).catch(() => null);
-  const priorMessages: BaseMessage[] = (conv?.messages ?? []).map((m) =>
-    m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content),
-  );
-  console.log(`[follow-up] AMS — prior messages=${priorMessages.length}`);
-
-  const messages: BaseMessage[] = [
-    new SystemMessage(buildSystemPrompt(state)),
-    ...priorMessages,
-    new HumanMessage(state.userMessage),
-  ];
-  if (state.response) {
-    messages.push(new AIMessage(state.response));  // TravelAgent's reply this turn
-  }
-
-  // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
-  let appliedPicks: POI[] | undefined;
-  const updateItineraryTool = tool(
-    async ({ pickedPois: minimal }: { pickedPois: Array<{ poiId: string; name: string }> }) => {
-      // The LLM gives us {poiId, name}. Materialize full POI records by
-      // looking up first in this turn's candidates, then in the previously
-      // committed picks (covers cross-turn references).
-      const priorById = new Map(state.pickedPois.map((p) => [p.id, p]));
-      const enriched: POI[] = [];
-      for (const m of minimal) {
-        const fromCurrent = state.pois.find((p) => p.id === m.poiId);
-        if (fromCurrent) { enriched.push(fromCurrent); continue; }
-        const prior = priorById.get(m.poiId);
-        if (prior) { enriched.push(prior); continue; }
-        console.warn(`[follow-up] tool updateItinerary — no POI data for id=${m.poiId} (${m.name}), dropping`);
-      }
-      await updateTripPickedPois(state.userId, state.sessionId, enriched);
-      appliedPicks = enriched;
-      console.log(`[follow-up] tool updateItinerary — wrote ${enriched.length} picks (${enriched.map((p) => p.name).join(", ")})`);
-      return { updated: true, count: enriched.length };
-    },
-    {
-      name: "updateItinerary",
-      description:
-        "Replace the user's current picked-places set with the given list. " +
-        "ONLY call this tool when the user's message NAMES specific places — examples: " +
-        "\"add Cubbon Park\", \"remove MTR\", \"swap Koshy's for Karavalli\", \"clear my picks\". " +
-        "DO NOT call this for generic requests, browsing, small talk, or thanks. " +
-        "DO NOT auto-pick the candidates. " +
-        "Always pass the FULL new set, not a delta. Use poiIds from the candidate list.",
-      schema: z.object({
-        pickedPois: z.array(z.object({ poiId: z.string(), name: z.string() })),
-      }),
-    },
-  );
-
-  const toolModel = getChatModel().bindTools([updateItineraryTool]);
-  const toolResponse = await toolModel.invoke(messages);
-
-  const toolCalls = toolResponse.tool_calls ?? [];
-  const toolMessages: ToolMessage[] = [];
-  for (const tc of toolCalls) {
-    if (tc.name !== "updateItinerary") continue;
-    const result = await updateItineraryTool.invoke(tc);
-    toolMessages.push(
-      new ToolMessage({
-        tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
-        content: typeof result === "string" ? result : JSON.stringify(result),
-      }),
+    console.log(
+        `[follow-up] entry — intent=${state.intent} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} ack=${state.response ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
     );
-  }
 
-  // ----- Pass 2: structured response -----
-  const messagesForFinal: BaseMessage[] = toolMessages.length
-    ? [...messages, toolResponse, ...toolMessages]
-    : messages;
+    const elicit = buildElicit(state);
+    console.log(
+        `[follow-up] elicit — ${elicit ? `fields=[${elicit.fields.map((f) => f.name).join(',')}]` : 'none'}`,
+    );
 
-  const structuredModel = getChatModel().withStructuredOutput(FollowUpOutput, { name: "follow_up" });
-  const out = await structuredModel.invoke(messagesForFinal);
-  console.log(`[follow-up] LLM — suggestedActions=[${out.suggestedActions.join(",")}]`);
-  console.log(`[follow-up] reply: "${out.textResponse.slice(0, 120)}${out.textResponse.length > 120 ? "…" : ""}"`);
+    // Load prior conversation from AMS so the supervisor sees the full chat history.
+    const conv = await getConversation(state.sessionId).catch(() => null);
+    const priorMessages: BaseMessage[] = (conv?.messages ?? []).map((m) =>
+        m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
+    );
+    console.log(`[follow-up] AMS — prior messages=${priorMessages.length}`);
 
-  // Persist this turn to AMS working memory (fire-and-forget).
-  const turnMessages: Array<{ role: "user" | "assistant"; content: string }> = [
-    { role: "user", content: state.userMessage },
-  ];
-  if (state.response) turnMessages.push({ role: "assistant", content: state.response });
-  turnMessages.push({ role: "assistant", content: out.textResponse });
+    const messages: BaseMessage[] = [
+        new SystemMessage(buildSystemPrompt(state)),
+        ...priorMessages,
+        new HumanMessage(state.userMessage),
+    ];
+    if (state.response) {
+        messages.push(new AIMessage(state.response)); // TravelAgent's reply this turn
+    }
 
-  appendTurn(state.sessionId, state.userId, turnMessages)
-    .catch((err) => console.error("[appendTurn] failed:", (err as Error).message));
+    // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
+    let appliedPicks: POI[] | undefined;
+    const updateItineraryTool = tool(
+        async ({ pickedPois: minimal }: { pickedPois: Array<{ poiId: string; name: string }> }) => {
+            // The LLM gives us {poiId, name}. Materialize full POI records by
+            // looking up first in this turn's candidates, then in the previously
+            // committed picks (covers cross-turn references).
+            const priorById = new Map(state.pickedPois.map((p) => [p.id, p]));
+            const enriched: POI[] = [];
+            for (const m of minimal) {
+                const fromCurrent = state.pois.find((p) => p.id === m.poiId);
+                if (fromCurrent) {
+                    enriched.push(fromCurrent);
+                    continue;
+                }
+                const prior = priorById.get(m.poiId);
+                if (prior) {
+                    enriched.push(prior);
+                    continue;
+                }
+                console.warn(
+                    `[follow-up] tool updateItinerary — no POI data for id=${m.poiId} (${m.name}), dropping`,
+                );
+            }
+            await updateTripPickedPois(state.userId, state.sessionId, enriched);
+            appliedPicks = enriched;
+            console.log(
+                `[follow-up] tool updateItinerary — wrote ${enriched.length} picks (${enriched.map((p) => p.name).join(', ')})`,
+            );
+            return { updated: true, count: enriched.length };
+        },
+        {
+            name: 'updateItinerary',
+            description:
+                "Replace the user's current picked-places set with the given list. " +
+                "ONLY call this tool when the user's message NAMES specific places — examples: " +
+                '"add Cubbon Park", "remove MTR", "swap Koshy\'s for Karavalli", "clear my picks". ' +
+                'DO NOT call this for generic requests, browsing, small talk, or thanks. ' +
+                'DO NOT auto-pick the candidates. ' +
+                'Always pass the FULL new set, not a delta. Use poiIds from the candidate list.',
+            schema: z.object({
+                pickedPois: z.array(z.object({ poiId: z.string(), name: z.string() })),
+            }),
+        },
+    );
 
-  const patch: Partial<AgentStateType> = {
-    suggestedActions: out.suggestedActions,
-    elicit,
-  };
-  if (appliedPicks) patch.pickedPois = appliedPicks;
-  return patch;
+    const toolModel = getChatModel().bindTools([updateItineraryTool]);
+    const toolResponse = await toolModel.invoke(messages);
+
+    const toolCalls = toolResponse.tool_calls ?? [];
+    const toolMessages: ToolMessage[] = [];
+    for (const tc of toolCalls) {
+        if (tc.name !== 'updateItinerary') continue;
+        const result = await updateItineraryTool.invoke(tc);
+        toolMessages.push(
+            new ToolMessage({
+                tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
+                content: typeof result === 'string' ? result : JSON.stringify(result),
+            }),
+        );
+    }
+
+    // ----- Pass 2: structured response -----
+    const messagesForFinal: BaseMessage[] = toolMessages.length
+        ? [...messages, toolResponse, ...toolMessages]
+        : messages;
+
+    const structuredModel = getChatModel().withStructuredOutput(FollowUpOutput, {
+        name: 'follow_up',
+    });
+    const out = await structuredModel.invoke(messagesForFinal);
+    console.log(`[follow-up] LLM — suggestedActions=[${out.suggestedActions.join(',')}]`);
+    console.log(
+        `[follow-up] reply: "${out.textResponse.slice(0, 120)}${out.textResponse.length > 120 ? '…' : ''}"`,
+    );
+
+    // Persist this turn to AMS working memory (fire-and-forget).
+    const turnMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+        { role: 'user', content: state.userMessage },
+    ];
+    if (state.response) turnMessages.push({ role: 'assistant', content: state.response });
+    turnMessages.push({ role: 'assistant', content: out.textResponse });
+
+    appendTurn(state.sessionId, state.userId, turnMessages).catch((err) =>
+        console.error('[appendTurn] failed:', (err as Error).message),
+    );
+
+    const patch: Partial<AgentStateType> = {
+        suggestedActions: out.suggestedActions,
+        elicit,
+    };
+    if (appliedPicks) patch.pickedPois = appliedPicks;
+    return patch;
 }
