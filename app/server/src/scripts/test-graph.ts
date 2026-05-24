@@ -9,78 +9,81 @@
  *   5. general                           → TravelAgent → FollowUp
  */
 
-import { graph } from "../agent/graph.js";
-import { closeRedis } from "../lib/redis.js";
+import { graph } from '../agent/graph.js';
+import { closeRedis } from '../lib/redis.js';
 
 async function main(): Promise<void> {
-  const userId = "ashwin";
+    const userId = 'ashwin';
 
-  console.log("\n=== Test 1: itineraryPlanning, slots missing (expect elicit) ===");
-  const out1 = await graph.invoke({
-    userId,
-    sessionId: "test-1",
-    userMessage: "Plan a trip to Bangalore",
-  });
-  console.log("intent:", out1.intent);
-  console.log("destination:", out1.destination);
-  console.log("dates:", out1.dates);
-  console.log("interests:", out1.interests);
-  console.log("response:", out1.response?.slice(0, 120));
-  console.log("elicit fields:", out1.elicit?.fields.map((f: { name: string }) => f.name));
+    console.log('\n=== Test 1: itineraryPlanning, slots missing (expect elicit) ===');
+    const out1 = await graph.invoke({
+        userId,
+        sessionId: 'test-1',
+        userMessage: 'Plan a trip to Bangalore',
+    });
+    console.log('intent:', out1.intent);
+    console.log('destination:', out1.destination);
+    console.log('dates:', out1.dates);
+    console.log('interests:', out1.interests);
+    console.log('response:', out1.response?.slice(0, 120));
+    console.log(
+        'elicit fields:',
+        out1.elicit?.fields.map((f: { name: string }) => f.name),
+    );
 
-  console.log("\n=== Test 2: itineraryPlanning, all slots present ===");
-  const out2 = await graph.invoke({
-    userId,
-    sessionId: "test-2",
-    userMessage: "Plan a foodie trip to Bangalore for May 20-24",
-    interests: ["food", "landmarks"],
-  });
-  console.log("intent:", out2.intent);
-  console.log("pois count:", out2.pois.length);
-  console.log("weather:", out2.weather?.condition);
-  console.log("response:", out2.response?.slice(0, 160));
-  console.log("elicit:", out2.elicit);
+    console.log('\n=== Test 2: itineraryPlanning, all slots present ===');
+    const out2 = await graph.invoke({
+        userId,
+        sessionId: 'test-2',
+        userMessage: 'Plan a foodie trip to Bangalore for May 20-24',
+        interests: ['food', 'landmarks'],
+    });
+    console.log('intent:', out2.intent);
+    console.log('pois count:', out2.pois.length);
+    console.log('weather:', out2.weather?.condition);
+    console.log('response:', out2.response?.slice(0, 160));
+    console.log('elicit:', out2.elicit);
 
-  console.log("\n=== Test 3: researching ===");
-  const out3 = await graph.invoke({
-    userId,
-    sessionId: "test-3",
-    userMessage: "What are some interesting places to explore in Mumbai?",
-    destination: "mumbai",
-  });
-  console.log("intent:", out3.intent);
-  console.log("pois count:", out3.pois.length);
-  console.log("weather (should be undefined):", out3.weather);
-  console.log("response:", out3.response?.slice(0, 160));
+    console.log('\n=== Test 3: researching ===');
+    const out3 = await graph.invoke({
+        userId,
+        sessionId: 'test-3',
+        userMessage: 'What are some interesting places to explore in Mumbai?',
+        destination: 'mumbai',
+    });
+    console.log('intent:', out3.intent);
+    console.log('pois count:', out3.pois.length);
+    console.log('weather (should be undefined):', out3.weather);
+    console.log('response:', out3.response?.slice(0, 160));
 
-  console.log("\n=== Test 4: tripPreparation ===");
-  const out4 = await graph.invoke({
-    userId,
-    sessionId: "test-4",
-    userMessage: "What should I pack for Barcelona in October?",
-    destination: "barcelona",
-    dates: { start: "2026-10-10", end: "2026-10-15" },
-  });
-  console.log("intent:", out4.intent);
-  console.log("pois count (should be 0):", out4.pois.length);
-  console.log("weather:", out4.weather?.condition);
-  console.log("response:", out4.response?.slice(0, 160));
+    console.log('\n=== Test 4: tripPreparation ===');
+    const out4 = await graph.invoke({
+        userId,
+        sessionId: 'test-4',
+        userMessage: 'What should I pack for Barcelona in October?',
+        destination: 'barcelona',
+        dates: { start: '2026-10-10', end: '2026-10-15' },
+    });
+    console.log('intent:', out4.intent);
+    console.log('pois count (should be 0):', out4.pois.length);
+    console.log('weather:', out4.weather?.condition);
+    console.log('response:', out4.response?.slice(0, 160));
 
-  console.log("\n=== Test 5: general ===");
-  const out5 = await graph.invoke({
-    userId,
-    sessionId: "test-5",
-    userMessage: "Thanks! Talk to you later.",
-  });
-  console.log("intent:", out5.intent);
-  console.log("pois count (should be 0):", out5.pois.length);
-  console.log("response:", out5.response?.slice(0, 160));
+    console.log('\n=== Test 5: general ===');
+    const out5 = await graph.invoke({
+        userId,
+        sessionId: 'test-5',
+        userMessage: 'Thanks! Talk to you later.',
+    });
+    console.log('intent:', out5.intent);
+    console.log('pois count (should be 0):', out5.pois.length);
+    console.log('response:', out5.response?.slice(0, 160));
 
-  await closeRedis();
-  console.log("\nDone.");
+    await closeRedis();
+    console.log('\nDone.');
 }
 
 main().catch((err) => {
-  console.error("Test failed:", err);
-  process.exit(1);
+    console.error('Test failed:', err);
+    process.exit(1);
 });
