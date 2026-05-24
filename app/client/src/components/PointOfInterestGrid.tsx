@@ -1,17 +1,35 @@
+import { useMemo } from "react";
 import type { POI } from "../types";
 
 interface Props {
   pois: POI[];
+  /** Drives the checkbox state — reflects the user's *staged* picks. */
   pickedIds: string[];
+  /** Drives the picked-first sort — reflects the user's *committed* picks.
+   *  Sort only shifts when the user clicks "Update plan" (committing changes),
+   *  so the grid stays stable during selection. */
+  sortByIds: string[];
   onToggle: (poi: POI) => void;
 }
 
-export function PointOfInterestGrid({ pois, pickedIds, onToggle }: Props) {
+export function PointOfInterestGrid({ pois, pickedIds, sortByIds, onToggle }: Props) {
   const pickedSet = new Set(pickedIds);
+
+  const orderedPois = useMemo(() => {
+    const order = new Map(sortByIds.map((id, i) => [id, i]));
+    return [...pois].sort((a, b) => {
+      const ai = order.get(a.id);
+      const bi = order.get(b.id);
+      if (ai !== undefined && bi === undefined) return -1;
+      if (ai === undefined && bi !== undefined) return 1;
+      if (ai !== undefined && bi !== undefined) return ai - bi;
+      return 0;
+    });
+  }, [pois, sortByIds]);
 
   return (
     <div className="poi-grid">
-      {pois.map((p) => {
+      {orderedPois.map((p) => {
         const picked = pickedSet.has(p.id);
         return (
           <div

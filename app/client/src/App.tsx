@@ -8,7 +8,7 @@ import { PlanAccordion } from "./components/PlanAccordion";
 import { LiveRouteMap } from "./components/LiveRouteMap";
 import { WeatherCard } from "./components/WeatherCard";
 import { MemoryDrawer } from "./components/MemoryDrawer";
-import type { POI, PastTrip, City, PickedPoi } from "./types";
+import type { POI, PastTrip, City } from "./types";
 
 const USER_ID = "ashwin";
 
@@ -19,36 +19,37 @@ export function App() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const pickedPois = stream.pickedPois;
-  const pickedIds = useMemo(() => pickedPois.map((p) => p.poiId), [pickedPois]);
+  const pickedIds = useMemo(() => pickedPois.map((p) => p.id), [pickedPois]);
 
   // Staging: which places the user currently has selected. Mirrors pickedPois on
   // every server-confirmed change, but the user can freely edit between commits.
   // Checkboxes + strip both reflect stagedPois. Server is NEVER touched until
   // the user clicks "Update plan".
-  const [stagedPois, setStagedPois] = useState<PickedPoi[]>([]);
+  const [stagedPois, setStagedPois] = useState<POI[]>([]);
   useEffect(() => {
     setStagedPois(pickedPois);
   }, [pickedPois]);
 
-  const stagedIds = useMemo(() => stagedPois.map((p) => p.poiId), [stagedPois]);
+  const stagedIds = useMemo(() => stagedPois.map((p) => p.id), [stagedPois]);
 
   const stagedDiffers = useMemo(() => {
     if (stagedPois.length !== pickedPois.length) return true;
-    return stagedPois.some((p, i) => pickedPois[i]?.poiId !== p.poiId);
+    return stagedPois.some((p, i) => pickedPois[i]?.id !== p.id);
   }, [stagedPois, pickedPois]);
 
-  // Full POI objects for the route map (needs lat/lng). Driven by staged picks so
-  // the route updates instantly when the user stages/unstages.
-  const pickedFullPois: POI[] = useMemo(
-    () => stream.pois.filter((p) => stagedIds.includes(p.id)),
-    [stream.pois, stagedIds],
-  );
+  // Pois shown in the grid: this turn's candidates + committed picks that fell
+  // out of the latest fetch. Picks carry full POI data so we just include them.
+  const gridPois: POI[] = useMemo(() => {
+    const inStream = new Set(stream.pois.map((p) => p.id));
+    const orphans = pickedPois.filter((p) => !inStream.has(p.id));
+    return [...stream.pois, ...orphans];
+  }, [stream.pois, pickedPois]);
 
   /** Build the "Here are the places I'd like to visit, in-order:" turn message
    *  and submit it. The agent's FollowUp LLM picks this up, calls
    *  `updateItinerary` with the matching place IDs, and Redis/state sync. */
   const submitPlanUpdate = useCallback(
-    (picks: PickedPoi[]) => {
+    (picks: POI[]) => {
       let userMessage: string;
       if (picks.length === 0) {
         userMessage = "Please clear my plan — I don't want any places.";
@@ -70,16 +71,14 @@ export function App() {
   /** Checkbox click — purely local staging, no server call. */
   const togglePick = useCallback((poi: POI) => {
     setStagedPois((picks) => {
-      const exists = picks.some((p) => p.poiId === poi.id);
-      return exists
-        ? picks.filter((p) => p.poiId !== poi.id)
-        : [...picks, { poiId: poi.id, name: poi.name }];
+      const exists = picks.some((p) => p.id === poi.id);
+      return exists ? picks.filter((p) => p.id !== poi.id) : [...picks, poi];
     });
   }, []);
 
   /** × on a strip pin — purely local unstaging, no server call. */
   const removePick = useCallback((poiId: string) => {
-    setStagedPois((picks) => picks.filter((p) => p.poiId !== poiId));
+    setStagedPois((picks) => picks.filter((p) => p.id !== poiId));
   }, []);
 
   const submitFreeForm = useCallback((text: string) => stream.submitTurn({ userMessage: text }), [stream]);
@@ -227,9 +226,14 @@ export function App() {
                 onUpdatePlan={handleUpdatePlan}
                 canUpdatePlan={stagedDiffers && !stream.running}
               >
-                <PointOfInterestGrid pois={stream.pois} pickedIds={stagedIds} onToggle={togglePick} />
+                <PointOfInterestGrid
+                  pois={gridPois}
+                  pickedIds={stagedIds}
+                  sortByIds={pickedIds}
+                  onToggle={togglePick}
+                />
               </PlanAccordion>
-              <LiveRouteMap picked={pickedFullPois} />
+              <LiveRouteMap picked={stagedPois} />
             </>
           )}
         </main>

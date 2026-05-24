@@ -1,9 +1,9 @@
 import type { ReactNode, MouseEvent } from "react";
-import type { PickedPoi } from "../types";
+import type { POI } from "../types";
 
 interface Props {
   /** The staged picks (what's checked + visible in the strip). */
-  picked: PickedPoi[];
+  picked: POI[];
   /** × on a strip pin — purely local unstage. */
   onRemovePick: (poiId: string) => void;
   onSave: () => void;
@@ -71,13 +71,13 @@ export function PlanAccordion({
           {picked.length > 0 && (
             <ol className="plan-strip">
               {picked.map((p) => (
-                <li key={p.poiId} className="plan-pin">
+                <li key={p.id} className="plan-pin">
                   <span className="plan-pin-name">{p.name}</span>
                   <button
                     type="button"
                     className="plan-pin-x"
                     aria-label={`Remove ${p.name}`}
-                    onClick={(e) => { stop(e); onRemovePick(p.poiId); }}
+                    onClick={(e) => { stop(e); onRemovePick(p.id); }}
                   >
                     ×
                   </button>

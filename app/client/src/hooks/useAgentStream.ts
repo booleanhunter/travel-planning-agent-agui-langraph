@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpAgent, type AgentSubscriber } from "@ag-ui/client";
-import type { POI, Weather, ElicitSpec, DotStatus, City, PickedPoi } from "../types";
+import type { POI, Weather, ElicitSpec, DotStatus, City } from "../types";
 
 interface ConversationEntry {
   role: "user" | "assistant";
@@ -17,7 +17,7 @@ interface AgentTurnInput {
   destination?: City;
   dates?: { start: string; end: string };
   interests?: string[];
-  pickedPois?: PickedPoi[];
+  pickedPois?: POI[];
 }
 
 interface AgentStream {
@@ -29,8 +29,8 @@ interface AgentStream {
   running: boolean;
   error: string | null;
   conversation: ConversationEntry[];
-  pickedPois: PickedPoi[];
-  setPickedPois: React.Dispatch<React.SetStateAction<PickedPoi[]>>;
+  pickedPois: POI[];
+  setPickedPois: React.Dispatch<React.SetStateAction<POI[]>>;
   submitTurn: (input: AgentTurnInput) => Promise<void>;
   resetCanvas: () => void;
 }
@@ -53,7 +53,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
-  const [pickedPois, setPickedPois] = useState<PickedPoi[]>([]);
+  const [pickedPois, setPickedPois] = useState<POI[]>([]);
   // Resolved slots from RouteIntent — carried forward to subsequent turns
   const [resolvedSlots, setResolvedSlots] = useState<{
     destination?: City;
@@ -74,7 +74,7 @@ export function useAgentStream(): AgentStream & { sessionId: string; setSessionI
     if (delta.destination !== undefined) setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
     if (delta.dates !== undefined) setResolvedSlots((s) => ({ ...s, dates: delta.dates as { start: string; end: string } }));
     if (delta.interests !== undefined) setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
-    if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as PickedPoi[]);
+    if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as POI[]);
     // Note: the response → conversation push happens in the subscriber so we can
     // associate the message with the current turnId.
   }, []);

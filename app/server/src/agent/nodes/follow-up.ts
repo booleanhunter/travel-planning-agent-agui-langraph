@@ -11,7 +11,7 @@ import { getChatModel } from "../../lib/llm.js";
 import { appendTurn, getConversation } from "../../memory/ams-client.js";
 import { updateTripPickedPois } from "../../data/trip-store.js";
 import type { AgentStateType } from "../state.js";
-import type { ElicitField, ElicitSpec, PickedPoi } from "../../types.js";
+import type { ElicitField, ElicitSpec, POI } from "../../types.js";
 
 // ----- Structured output for the final response --------------------------------------
 
@@ -35,7 +35,7 @@ function buildSystemPrompt(state: AgentStateType): string {
     ? state.pois.map((p) => `  - ${p.id}: ${p.name}`).join("\n")
     : "  (none yet)";
   const pickedList = state.pickedPois.length
-    ? state.pickedPois.map((p) => `  - ${p.poiId}: ${p.name}`).join("\n")
+    ? state.pickedPois.map((p) => `  - ${p.id}: ${p.name}`).join("\n")
     : "  (none picked yet)";
   return [
     "You are a senior travel supervisor reviewing the chat history above.",
@@ -155,13 +155,25 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
   }
 
   // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
-  let appliedPicks: PickedPoi[] | undefined;
+  let appliedPicks: POI[] | undefined;
   const updateItineraryTool = tool(
-    async ({ pickedPois }: { pickedPois: PickedPoi[] }) => {
-      await updateTripPickedPois(state.userId, state.sessionId, pickedPois);
-      appliedPicks = pickedPois;
-      console.log(`[follow-up] tool updateItinerary — wrote ${pickedPois.length} picks (${pickedPois.map((p) => p.name).join(", ")})`);
-      return { updated: true, count: pickedPois.length };
+    async ({ pickedPois: minimal }: { pickedPois: Array<{ poiId: string; name: string }> }) => {
+      // The LLM gives us {poiId, name}. Materialize full POI records by
+      // looking up first in this turn's candidates, then in the previously
+      // committed picks (covers cross-turn references).
+      const priorById = new Map(state.pickedPois.map((p) => [p.id, p]));
+      const enriched: POI[] = [];
+      for (const m of minimal) {
+        const fromCurrent = state.pois.find((p) => p.id === m.poiId);
+        if (fromCurrent) { enriched.push(fromCurrent); continue; }
+        const prior = priorById.get(m.poiId);
+        if (prior) { enriched.push(prior); continue; }
+        console.warn(`[follow-up] tool updateItinerary — no POI data for id=${m.poiId} (${m.name}), dropping`);
+      }
+      await updateTripPickedPois(state.userId, state.sessionId, enriched);
+      appliedPicks = enriched;
+      console.log(`[follow-up] tool updateItinerary — wrote ${enriched.length} picks (${enriched.map((p) => p.name).join(", ")})`);
+      return { updated: true, count: enriched.length };
     },
     {
       name: "updateItinerary",
