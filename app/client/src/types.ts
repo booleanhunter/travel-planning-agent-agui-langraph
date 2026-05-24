@@ -28,20 +28,68 @@ export interface Weather {
     precipitationChance: number;
 }
 
-export interface ElicitField {
-    name: string;
-    type: 'string' | 'enum' | 'multi-enum' | 'date' | 'date-range';
-    label: string;
-    helpText?: string;
-    required?: boolean;
-    options?: Array<{ value: string; label: string }>;
-    prefilledFromMemory?: boolean;
-    default?: unknown;
-}
+/**
+ * Subset of JSON Schema allowed in MCP elicitation `requestedSchema`.
+ * Per spec: flat objects with primitive properties only — no nested objects.
+ * Allowed: string (with format), number/integer, boolean, enum (single via
+ * enum/oneOf), array of enums (multi via items.enum/items.anyOf).
+ */
+export type ElicitStringSchema = {
+    type: 'string';
+    title?: string;
+    description?: string;
+    format?: 'email' | 'uri' | 'date' | 'date-time';
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+    default?: string;
+    enum?: string[];
+    oneOf?: Array<{ const: string; title?: string }>;
+};
+
+export type ElicitNumberSchema = {
+    type: 'number' | 'integer';
+    title?: string;
+    description?: string;
+    minimum?: number;
+    maximum?: number;
+    default?: number;
+};
+
+export type ElicitBooleanSchema = {
+    type: 'boolean';
+    title?: string;
+    description?: string;
+    default?: boolean;
+};
+
+export type ElicitArrayEnumSchema = {
+    type: 'array';
+    title?: string;
+    description?: string;
+    items: {
+        type?: 'string';
+        enum?: string[];
+        anyOf?: Array<{ const: string; title?: string }>;
+    };
+    minItems?: number;
+    maxItems?: number;
+    default?: string[];
+};
+
+export type ElicitPrimitiveSchema =
+    | ElicitStringSchema
+    | ElicitNumberSchema
+    | ElicitBooleanSchema
+    | ElicitArrayEnumSchema;
 
 export interface ElicitSpec {
     message: string;
-    fields: ElicitField[];
+    requestedSchema: {
+        type: 'object';
+        properties: Record<string, ElicitPrimitiveSchema>;
+        required?: string[];
+    };
 }
 
 export interface UserPreferences {

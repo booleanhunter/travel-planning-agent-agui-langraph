@@ -9,7 +9,7 @@ import {
 import { getChatModel } from '../../helpers/llm.js';
 import { appendTurn, getConversation } from '../../../user/domain/user-service.js';
 import type { AgentStateType } from '../state.js';
-import type { ElicitField, ElicitSpec, POI } from '../../../../types.js';
+import type { ElicitPrimitiveSchema, ElicitSpec, POI } from '../../../../types.js';
 import { makeUpdateItineraryTool } from '../tools.js';
 
 // ----- Structured output for the final response --------------------------------------
@@ -98,44 +98,54 @@ function requiredSlots(
 
 function buildElicit(state: AgentStateType): ElicitSpec | undefined {
     const needed = requiredSlots(state.intent);
-    const fields: ElicitField[] = [];
+    const properties: Record<string, ElicitPrimitiveSchema> = {};
+    const required: string[] = [];
 
     if (needed.includes('destination') && !state.destination) {
-        fields.push({
-            name: 'destination',
-            type: 'enum',
-            label: 'Where to?',
-            required: true,
-            options: [
-                { value: 'bangalore', label: 'Bangalore' },
-                { value: 'mumbai', label: 'Mumbai' },
-                { value: 'barcelona', label: 'Barcelona' },
+        properties.destination = {
+            type: 'string',
+            title: 'Where to?',
+            oneOf: [
+                { const: 'bangalore', title: 'Bangalore' },
+                { const: 'mumbai', title: 'Mumbai' },
+                { const: 'barcelona', title: 'Barcelona' },
             ],
-        });
+        };
+        required.push('destination');
     }
     if (needed.includes('dates') && !state.dates) {
-        fields.push({
-            name: 'dates',
-            type: 'date-range',
-            label: 'When?',
-            helpText: "Specific dates let me factor in weather. Skip if you're flexible.",
-        });
+        // MCP forbids nested objects in requestedSchema, so date range is two flat fields.
+        properties.startDate = {
+            type: 'string',
+            title: 'Start date',
+            format: 'date',
+            description: "Specific dates let me factor in weather. Skip if you're flexible.",
+        };
+        properties.endDate = {
+            type: 'string',
+            title: 'End date',
+            format: 'date',
+        };
     }
     if (needed.includes('interests') && !state.interests.length) {
         const memInterests = state.preferences?.recurringInterests ?? [];
-        fields.push({
-            name: 'interests',
-            type: 'multi-enum',
-            label: 'What are you in the mood for?',
-            options: INTEREST_OPTIONS,
-            default: memInterests,
-            prefilledFromMemory: memInterests.length > 0,
-        });
+        properties.interests = {
+            type: 'array',
+            title: 'What are you in the mood for?',
+            items: {
+                anyOf: INTEREST_OPTIONS.map((o) => ({ const: o.value, title: o.label })),
+            },
+            ...(memInterests.length > 0 ? { default: memInterests } : {}),
+        };
     }
-    if (!fields.length) return undefined;
+    if (!Object.keys(properties).length) return undefined;
     return {
         message: 'A few quick details so I can plan your day:',
-        fields,
+        requestedSchema: {
+            type: 'object',
+            properties,
+            ...(required.length ? { required } : {}),
+        },
     };
 }
 
@@ -148,7 +158,7 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
 
     const elicit = buildElicit(state);
     console.log(
-        `[follow-up] elicit — ${elicit ? `fields=[${elicit.fields.map((f) => f.name).join(',')}]` : 'none'}`,
+        `[follow-up] elicit — ${elicit ? `fields=[${Object.keys(elicit.requestedSchema.properties).join(',')}]` : 'none'}`,
     );
 
     // Load prior conversation from AMS so the supervisor sees the full chat history.
