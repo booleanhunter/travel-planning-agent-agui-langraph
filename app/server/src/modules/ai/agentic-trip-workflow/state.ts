@@ -21,6 +21,11 @@ export const AgentState = z.object({
     preferences: z.custom<UserPreferences>().optional(),
     pickedPois: z.custom<POI[]>().default(() => []),
 
+    // One-shot flag: user clicked Skip on the previous turn's elicit.
+    // FollowUp uses this to suppress re-eliciting the same slots this turn.
+    // Per-turn only — client opts in by passing true on the decline turn.
+    userDeclinedElicit: z.boolean().optional(),
+
     // Outputs — populated by Fetch* and Finalize* nodes
     pois: z.custom<POI[]>().default(() => []),
     weather: z.custom<Weather>().optional(),

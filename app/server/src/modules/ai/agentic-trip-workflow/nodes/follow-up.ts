@@ -97,6 +97,8 @@ function requiredSlots(
 }
 
 function buildElicit(state: AgentStateType): ElicitSpec | undefined {
+    // User explicitly declined the prior elicit this turn — don't re-ask.
+    if (state.userDeclinedElicit) return undefined;
     const needed = requiredSlots(state.intent);
     const properties: Record<string, ElicitPrimitiveSchema> = {};
     const required: string[] = [];
@@ -119,7 +121,7 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
             type: 'string',
             title: 'Start date',
             format: 'date',
-            description: "Specific dates let me factor in weather. Skip if you're flexible.",
+            description: "Specific dates, for factoring in weather. Skip if you're flexible.",
         };
         properties.endDate = {
             type: 'string',
@@ -173,9 +175,9 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
         ...priorMessages,
         new HumanMessage(state.userMessage),
     ];
-    if (state.response) {
-        messages.push(new AIMessage(state.response)); // TravelAgent's reply this turn
-    }
+    // if (state.response) {
+    //     messages.push(new AIMessage(state.response)); // TravelAgent's reply this turn
+    // }
 
     // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
     let appliedPicks: POI[] | undefined;
@@ -225,6 +227,7 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     );
 
     const patch: Partial<AgentStateType> = {
+        response: out.textResponse,
         suggestedActions: out.suggestedActions,
         elicit,
     };

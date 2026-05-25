@@ -18,6 +18,8 @@ interface AgentTurnInput {
     dates?: { start: string; end: string };
     interests?: string[];
     pickedPois?: POI[];
+    /** One-shot: tells server this turn is a decline of the prior elicit. */
+    userDeclinedElicit?: boolean;
 }
 
 interface AgentStream {
@@ -32,6 +34,8 @@ interface AgentStream {
     pickedPois: POI[];
     setPickedPois: React.Dispatch<React.SetStateAction<POI[]>>;
     submitTurn: (input: AgentTurnInput) => Promise<void>;
+    /** Cancel/dismiss the current elicit locally — no server call. */
+    clearElicit: () => void;
     resetCanvas: () => void;
 }
 
@@ -89,6 +93,8 @@ export function useAgentStream(): AgentStream & {
         // associate the message with the current turnId.
     }, []);
 
+    const clearElicit = useCallback(() => setElicit(null), []);
+
     const resetCanvas = useCallback(() => {
         setPois([]);
         setWeather(null);
@@ -127,6 +133,7 @@ export function useAgentStream(): AgentStream & {
             if (input.interests?.length) stateToSend.interests = input.interests;
             const effectivePicked = input.pickedPois ?? pickedPois;
             if (effectivePicked.length) stateToSend.pickedPois = effectivePicked;
+            if (input.userDeclinedElicit) stateToSend.userDeclinedElicit = true;
 
             agent.threadId = sessionId;
             agent.setMessages([
@@ -195,6 +202,7 @@ export function useAgentStream(): AgentStream & {
         pickedPois,
         setPickedPois,
         submitTurn,
+        clearElicit,
         resetCanvas,
         sessionId,
         setSessionId,

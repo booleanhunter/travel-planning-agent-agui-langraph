@@ -110,6 +110,6 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
         dates: resolvedDates,
         interests,
         preferences: prefs ?? state.preferences,
-        response: out.textResponse,
+        // response: out.textResponse, // Don't store this agent's reply in state — it's ephemeral, only for this turn's UI. Storing it causes weirdness because it doesn't have access to all tools.
     };
 }
