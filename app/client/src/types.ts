@@ -140,6 +140,7 @@ export interface PastTrip {
     sessionId: string;
     city: City;
     dates?: { start: string; end: string };
+    interests: string[];
     pickedPois: POI[];
     createdAt?: string;
     completedAt?: string;

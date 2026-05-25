@@ -97,6 +97,7 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
         city: resolvedDestination,
         startDate: resolvedDates?.start,
         endDate: resolvedDates?.end,
+        interests,
     }).catch((err) => console.error('[travel-agent] ensureDraft failed:', (err as Error).message));
 
     return {

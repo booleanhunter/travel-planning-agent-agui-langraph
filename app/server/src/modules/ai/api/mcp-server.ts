@@ -15,9 +15,12 @@ import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 
 const USER_ID = 'ashwin';
 
-function newSessionId(): string {
-    return `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+/**
+ * Fixed sessionId — one slot per user. Across multiple planTrip calls on a
+ * single MCP connection, AMS conversation history accumulates and the
+ * trip-store carries the in-progress draft. Reset (via the web UI) clears it.
+ */
+const SESSION_ID = 'newSessionId';
 
 // ----- Output schema for `planTrip` -------------------------------------------------
 // Declared on the tool so MCP-aware clients can render/parse the structured data
@@ -133,7 +136,7 @@ export function createMcpServer(): McpServer {
             outputSchema: planTripOutputSchema,
         },
         async ({ userMessage }) => {
-            const sessionId = newSessionId();
+            const sessionId = SESSION_ID;
             let state: Record<string, unknown> = {
                 userId: USER_ID,
                 sessionId,

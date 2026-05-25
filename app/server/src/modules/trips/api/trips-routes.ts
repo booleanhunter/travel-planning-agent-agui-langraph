@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
-import { getTrip, listPastTrips, markComplete } from '../domain/trips-service.js';
+import {
+    archiveTripToMemory,
+    getTrip,
+    listPastTrips,
+    markComplete,
+    resetWorkingTrip,
+} from '../domain/trips-service.js';
 
 const router = Router();
 
@@ -49,8 +55,8 @@ router.post('/load-trip', async (req, res) => {
 
 /**
  * POST /api/user/save-trip { userId?, tripId }
- * Marks the trip as completed (flips status, sets completedAt, adds to past-trips set).
- * All trip metadata (city, dates, picked POIs) is already in Redis from prior writes.
+ * Flips the trip-store record to "completed" AND writes a trip-summary
+ * memory to AMS long-term so future semantic searches can recall it.
  */
 router.post('/save-trip', async (req, res) => {
     const { userId = 'ashwin', tripId } = req.body as { userId?: string; tripId: string };
@@ -64,7 +70,36 @@ router.post('/save-trip', async (req, res) => {
             res.status(404).json({ error: 'trip not found — make at least one pick first' });
             return;
         }
+        // Archive to AMS long-term — mirrors what the seed produces for past trips.
+        await archiveTripToMemory(userId, trip).catch((err) =>
+            console.error(
+                '[save-trip] archiveTripToMemory failed:',
+                (err as Error).message,
+            ),
+        );
         res.json({ trip });
+    } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+    }
+});
+
+/**
+ * POST /api/user/reset { userId?, sessionId }
+ * Clears the working planning slot for this user/session: deletes the
+ * trip-store HASH and wipes AMS working memory. Past trips remain.
+ */
+router.post('/reset', async (req, res) => {
+    const { userId = 'ashwin', sessionId } = req.body as {
+        userId?: string;
+        sessionId: string;
+    };
+    if (!sessionId) {
+        res.status(400).json({ error: 'sessionId is required' });
+        return;
+    }
+    try {
+        await resetWorkingTrip(userId, sessionId);
+        res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
     }

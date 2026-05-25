@@ -59,6 +59,7 @@ async function writeTrip(redis, userId, trip, pickedPois) {
         city: trip.city,
         startDate: trip.dates.start,
         endDate: trip.dates.end,
+        interests: JSON.stringify(trip.interests ?? []),
         pickedPois: JSON.stringify(pickedPois),
         createdAt: now,
         updatedAt: now,
