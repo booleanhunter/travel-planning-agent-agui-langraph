@@ -9,6 +9,7 @@ import type { ElicitRequestFormParams } from '@modelcontextprotocol/sdk/types.js
 import { z } from 'zod';
 import { CitySchema, POISchema } from '#modules/places/types.js';
 import { WeatherSchema } from '#modules/weather/types.js';
+import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 import { graph } from '../agentic-trip-workflow/graph.js';
 import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 
@@ -143,6 +144,19 @@ export function createMcpServer(): McpServer {
             // elicitInput and merge the response into state for the next invocation.
             // Cap iterations to avoid runaway loops if the agent keeps re-eliciting.
             for (let i = 0; i < 5; i++) {
+                // Pre-fetch AMS context outside the graph each iteration so the new
+                // assistant turn from the prior round (persisted by FollowUp's
+                // appendTurn) is visible to the next TravelAgent + FollowUp run.
+                const [preferences, conv] = await Promise.all([
+                    getPreferences(USER_ID).catch(() => undefined),
+                    getConversation(sessionId).catch(() => null),
+                ]);
+                const conversationHistory = (conv?.messages ?? []).map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                }));
+                state = { ...state, preferences, conversationHistory };
+
                 const result = (await graph.invoke(state)) as AgentStateType;
 
                 if (!result.elicit) {

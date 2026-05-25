@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { EventType } from '@ag-ui/core';
 import { graph, APP_NODES } from '../agentic-trip-workflow/graph.js';
+import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 
 const router = Router();
 
@@ -38,8 +39,21 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
     try {
         send({ type: EventType.RUN_STARTED, threadId, runId });
 
+        // Pre-fetch AMS context outside the graph so nodes don't side-effect-read.
+        const [preferences, conv] = await Promise.all([
+            getPreferences(userId).catch(() => undefined),
+            getConversation(sessionId).catch(() => null),
+        ]);
+        const conversationHistory = (conv?.messages ?? []).map((m) => ({
+            role: m.role,
+            content: m.content,
+        }));
+        console.log(
+            `[chat] context — prior messages=${conversationHistory.length} preferences=${preferences ? 'yes' : 'none'}`,
+        );
+
         const stream = await graph.stream(
-            { userId, sessionId, userMessage, ...state },
+            { userId, sessionId, userMessage, ...state, preferences, conversationHistory },
             { streamMode: 'updates' },
         );
 

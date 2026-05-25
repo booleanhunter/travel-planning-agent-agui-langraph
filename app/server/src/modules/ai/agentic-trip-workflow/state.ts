@@ -22,6 +22,13 @@ export const AgentState = z.object({
     dates: z.object({ start: z.string(), end: z.string() }).optional(),
     interests: z.array(z.string()).default([]),
     preferences: z.custom<UserPreferences>().optional(),
+    /**
+     * Conversation history pre-fetched outside the graph (from AMS working
+     * memory). Nodes consume this directly — no in-node AMS reads.
+     */
+    conversationHistory: z
+        .array(z.object({ role: z.string(), content: z.string() }))
+        .default(() => []),
     pickedPois: z.array(POISchema).default(() => []),
 
     // One-shot flag: user clicked Skip on the previous turn's elicit.
