@@ -7,7 +7,7 @@ import {
     type BaseMessage,
 } from '@langchain/core/messages';
 import { getChatModel } from '#modules/ai/helpers/llm.js';
-import { appendTurn, getConversation } from '#modules/user/domain/user-service.js';
+import { appendTurn } from '#modules/user/domain/user-service.js';
 import type { POI } from '#modules/places/types.js';
 import type { AgentStateType } from '../state.js';
 import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
@@ -164,12 +164,11 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
         `[follow-up] elicit — ${elicit ? `fields=[${Object.keys(elicit.requestedSchema.properties).join(',')}]` : 'none'}`,
     );
 
-    // Load prior conversation from AMS so the supervisor sees the full chat history.
-    const conv = await getConversation(state.sessionId).catch(() => null);
-    const priorMessages: BaseMessage[] = (conv?.messages ?? []).map((m) =>
+    // Conversation history was pre-fetched outside the graph — read from state.
+    const priorMessages: BaseMessage[] = state.conversationHistory.map((m) =>
         m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
     );
-    console.log(`[follow-up] AMS — prior messages=${priorMessages.length}`);
+    console.log(`[follow-up] context — prior messages=${priorMessages.length}`);
 
     const messages: BaseMessage[] = [
         new SystemMessage(buildSystemPrompt(state)),

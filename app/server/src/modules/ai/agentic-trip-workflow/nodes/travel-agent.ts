@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import { getChatModel } from '#modules/ai/helpers/llm.js';
-import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 import { ensureDraft } from '#modules/trips/domain/trips-service.js';
 import { CitySchema } from '#modules/places/types.js';
 import type { AgentStateType } from '../state.js';
@@ -54,17 +53,15 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
         `\n🧭 [travel-agent] turn — session=${state.sessionId} user=${state.userId} msg="${state.userMessage.slice(0, 80)}"`,
     );
 
-    const [prefs, conv] = await Promise.all([
-        getPreferences(state.userId).catch(() => undefined),
-        getConversation(state.sessionId).catch(() => null),
-    ]);
+    // Context pre-fetched outside the graph (chat.ts / mcp-server.ts) — no in-node AMS reads.
+    const prefs = state.preferences;
     console.log(
-        `[travel-agent] AMS — prior messages=${conv?.messages?.length ?? 0} preferences=${prefs ? JSON.stringify(prefs) : 'none'}`,
+        `[travel-agent] context — prior messages=${state.conversationHistory.length} preferences=${prefs ? JSON.stringify(prefs) : 'none'}`,
     );
 
     const today = new Date().toISOString().split('T')[0];
 
-    const priorMessages: BaseMessage[] = (conv?.messages ?? []).map((m) =>
+    const priorMessages: BaseMessage[] = state.conversationHistory.map((m) =>
         m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
     );
 
@@ -107,7 +104,7 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
         destination: resolvedDestination,
         dates: resolvedDates,
         interests,
-        preferences: prefs ?? state.preferences,
+        // preferences flows through state as-is — no need to re-emit
         // response: out.textResponse, // Don't store this agent's reply in state — it's ephemeral, only for this turn's UI. Storing it causes weirdness because it doesn't have access to all tools.
     };
 }
