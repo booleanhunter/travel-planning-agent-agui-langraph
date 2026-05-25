@@ -6,10 +6,11 @@ import {
     ToolMessage,
     type BaseMessage,
 } from '@langchain/core/messages';
-import { getChatModel } from '../../helpers/llm.js';
-import { appendTurn, getConversation } from '../../../user/domain/user-service.js';
+import { getChatModel } from '#modules/ai/helpers/llm.js';
+import { appendTurn, getConversation } from '#modules/user/domain/user-service.js';
+import type { POI } from '#modules/places/types.js';
 import type { AgentStateType } from '../state.js';
-import type { ElicitPrimitiveSchema, ElicitSpec, POI } from '../../../../types.js';
+import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
 import { makeUpdateItineraryTool } from '../tools.js';
 
 // ----- Structured output for the final response --------------------------------------

@@ -1,4 +1,4 @@
-import { getWeather } from '../../../weather/domain/weather-service.js';
+import { getWeather } from '#modules/weather/domain/weather-service.js';
 import type { AgentStateType } from '../state.js';
 
 export async function fetchWeather(state: AgentStateType): Promise<Partial<AgentStateType>> {

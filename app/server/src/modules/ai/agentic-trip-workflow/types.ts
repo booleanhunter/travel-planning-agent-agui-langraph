@@ -1,40 +1,15 @@
 /**
- * Shared types between server graph nodes, REST routes, and (copied to) the client.
- */
-
-export type City = 'bangalore' | 'mumbai' | 'barcelona';
-
-export type POICategory = 'food' | 'culture' | 'outdoors' | 'nightlife' | 'shopping' | 'other';
-
-export interface POI {
-    id: string; // Google placeId
-    name: string;
-    description: string;
-    rating: number; // 0..5
-    photoUrl: string | null;
-    category: POICategory;
-    city: City;
-    lat: number;
-    lng: number;
-    /** Optional KNN score from the hybrid search (lower = closer). */
-    score?: number;
-}
-
-export interface Weather {
-    city: City;
-    month: number; // 1..12
-    high: number; // celsius
-    low: number;
-    condition: string;
-    precipitationChance: number; // 0..1
-}
-
-/**
+ * MCP elicitation request shapes.
+ *
  * Subset of JSON Schema allowed in MCP elicitation `requestedSchema`.
  * Per spec: flat objects with primitive properties only — no nested objects.
  * Allowed: string (with format), number/integer, boolean, enum (single via
  * enum/oneOf), array of enums (multi via items.enum/items.anyOf).
+ *
+ * Hand-maintained TS to match the MCP spec — not Zod-first because we're
+ * mirroring an external spec we don't author.
  */
+
 export type ElicitStringSchema = {
     type: 'string';
     title?: string;
@@ -91,21 +66,4 @@ export interface ElicitSpec {
         properties: Record<string, ElicitPrimitiveSchema>;
         required?: string[];
     };
-}
-
-export interface UserPreferences {
-    budget?: 'low' | 'mid' | 'high';
-    groupSize?: 'solo' | 'pair' | 'family' | 'group';
-    recurringInterests?: string[];
-}
-
-export interface PastTrip {
-    tripId: string;
-    sessionId: string;
-    city: City;
-    dates?: { start: string; end: string };
-    /** Picked places stored as full POI records for round-tripping to the UI. */
-    pickedPois: POI[];
-    createdAt?: string;
-    completedAt?: string;
 }

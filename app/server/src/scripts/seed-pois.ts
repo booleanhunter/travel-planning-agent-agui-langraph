@@ -8,11 +8,11 @@
  * Usage: GOOGLE_MAPS_API_KEY=... npm run seed:pois
  */
 
-import { config } from '../config.js';
-import { closeRedis } from '../lib/redis.js';
-import { embedToBuffer } from '../modules/ai/helpers/llm.js';
-import { ensurePoiIndex, upsertPoi } from '../modules/places/domain/places-service.js';
-import type { City, POI, POICategory } from '../types.js';
+import { config } from '#config';
+import { closeRedis } from '#lib/redis.js';
+import { embedToBuffer } from '#modules/ai/helpers/llm.js';
+import { ensurePoiIndex, upsertPoi } from '#modules/places/domain/places-service.js';
+import type { City, POI, POICategory } from '#modules/places/types.js';
 
 const PLACES_BASE = 'https://places.googleapis.com/v1';
 

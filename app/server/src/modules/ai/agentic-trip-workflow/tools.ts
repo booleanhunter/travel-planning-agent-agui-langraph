@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
-import { commitPicks } from '../../trips/domain/trips-service.js';
+import { commitPicks } from '#modules/trips/domain/trips-service.js';
+import type { POI } from '#modules/places/types.js';
 import type { AgentStateType } from './state.js';
-import type { POI } from '../../../types.js';
 
 /**
  * Build the updateItinerary tool for a single agent turn.
