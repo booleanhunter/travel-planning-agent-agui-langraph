@@ -1,5 +1,5 @@
 /**
- * seed-pois.js — ingest POIs from fixtures/pois.json into Redis.
+ * seed-pois.js — ingest POIs from datasets/pois.json into Redis.
  *
  * For each POI:
  *   1. Embed `name + description + category + city` via OpenAI's
@@ -9,7 +9,7 @@
  *   3. Ensure the FT vector index `idx:pointsOfInterest` exists so
  *      hybrid (city TAG + KNN vector) search works.
  *
- * Reads:  server/fixtures/pois.json
+ * Reads:  server/datasets/pois.json
  * Writes: Redis  pointsOfInterest:*  +  idx:pointsOfInterest
  *
  * Run:  npm run seed:pois -w server
@@ -33,7 +33,7 @@ if (!OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is required (set in .env or environment).');
 }
 
-const POIS_PATH = resolve(HERE, '../../fixtures/pois.json');
+const POIS_PATH = resolve(HERE, '../../datasets/pois.json');
 
 // ----- Redis index settings ------------------------------------------------
 
