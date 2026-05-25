@@ -3,10 +3,10 @@
  *
  * Iterates over the CITIES list below, queries Google Places (Text Search)
  * for each city × category, normalizes the results into POI records, and
- * writes everything to server/fixtures/pois.json.
+ * writes everything to server/datasets/pois.json.
  *
  * This is the EXPENSIVE step (Google API quota). After running once, the
- * resulting fixtures/pois.json is committed to git, and anyone else can
+ * resulting datasets/pois.json is committed to git, and anyone else can
  * seed Redis from the JSON without a Google API key (see seed-pois.js).
  *
  * To edit the list of cities or query templates: change the CITIES or
@@ -17,7 +17,7 @@
  *   GOOGLE_MAPS_API_KEY=... npm run fetch:pois -w server
  *
  * Output:
- *   server/fixtures/pois.json
+ *   server/datasets/pois.json
  */
 
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -185,7 +185,7 @@ async function gatherForCity(apiKey, city) {
 
 // ----- Entry point ----------------------------------------------------------
 
-const OUTPUT_PATH = resolve(__here, '../../fixtures/pois.json');
+const OUTPUT_PATH = resolve(__here, '../../datasets/pois.json');
 
 async function main() {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;

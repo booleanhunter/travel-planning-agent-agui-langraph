@@ -1,0 +1,184 @@
+{
+    "users": [
+        {
+            "userId": "ashwin",
+            "displayName": "Ashwin",
+            "memories": [
+                {
+                    "id": "ashwin:pref:profile",
+                    "text": "Solo traveler who prefers off-the-beaten-path food spots over famous landmarks. Comfortable with mid-range pricing.",
+                    "topics": ["travel_preferences", "food", "offbeat", "solo", "budget"]
+                },
+                {
+                    "id": "ashwin:pref:cuisine",
+                    "text": "Loves regional cuisines, hole-in-the-wall eateries, and street food. Often picks a destination just for the food scene.",
+                    "topics": ["travel_preferences", "food", "interests"]
+                }
+            ],
+            "pastTrips": [
+                {
+                    "tripId": "seed-ashwin-bangalore",
+                    "city": "bangalore",
+                    "dates": { "start": "2024-09-15", "end": "2024-09-19" },
+                    "interests": ["food", "offbeat"],
+                    "summary": "5-day solo trip to Bangalore in September 2024 focused on off-the-beaten-path food and casual eateries. Visited Karavalli for coastal Indian, Olive Beach for Mediterranean, and explored the Museum of Art and Photography and Bengaluru Palace between meals.",
+                    "pickedPoiIds": [
+                        "ChIJ5QD7Rn4WrjsRH_yAmEEDe3c",
+                        "ChIJ03xVrSoUrjsRfYzAUhym4eY",
+                        "ChIJo0tJmV8VrjsR0vWuyvPK9DM",
+                        "ChIJK3WK06kXrjsRtJJUPxlNE4A",
+                        "ChIJN1ZKKUkWrjsRzxIVM363-LE"
+                    ]
+                },
+                {
+                    "tripId": "seed-ashwin-bangkok",
+                    "city": "bangkok",
+                    "dates": { "start": "2025-01-22", "end": "2025-01-28" },
+                    "interests": ["food", "offbeat"],
+                    "summary": "Week-long solo trip to Bangkok in January 2025. Focused on street food, hidden cafes, and an afternoon at the National Museum. Highlights: Rongros riverside dinner, mango sticky rice from Myth I, slow afternoon at Romaneenart Park.",
+                    "pickedPoiIds": [
+                        "ChIJjYPUa8GZ4jARi9fgigQOiR8",
+                        "ChIJh8hsBmaZ4jARBv6FMWTzR9Y",
+                        "ChIJrfglXG2Z4jAREUZy5E5nh9E",
+                        "ChIJbXZLwgyZ4jARO_0Exd6l_lU",
+                        "ChIJH0VOPheZ4jARqJGe0Cs1YFI"
+                    ]
+                },
+                {
+                    "tripId": "seed-ashwin-kochi",
+                    "city": "kochi",
+                    "dates": { "start": "2025-04-08", "end": "2025-04-13" },
+                    "interests": ["food", "slow"],
+                    "summary": "Slow 5-day food trip to Kochi in April 2025. Authentic Kerala cuisine at Rice Boat and Chef Pillai, casual eats at Kerala Cafe Fort Kochi, plus walks along Willingdon Island and a quick stop at Kerala Museum.",
+                    "pickedPoiIds": [
+                        "ChIJU5X0kE1tCDsRmKL4DcQIHVM",
+                        "ChIJ94LtKs1zCDsRSqbKZSL91KY",
+                        "ChIJmT4EVwltCDsRj6YS9BPSSOI",
+                        "ChIJdUBEBLUNCDsRLyCLnh9T94w",
+                        "ChIJo6uy81JtCDsR1QgOhkhSYZk"
+                    ]
+                }
+            ]
+        },
+        {
+            "userId": "bhavana",
+            "displayName": "Bhavana",
+            "memories": [
+                {
+                    "id": "bhavana:pref:profile",
+                    "text": "Travels with family — partner and two young kids (ages 6 and 9). Prefers famous landmarks, outdoor parks, and family-friendly restaurants everyone can enjoy.",
+                    "topics": ["travel_preferences", "landmarks", "outdoors", "family"]
+                },
+                {
+                    "id": "bhavana:pref:budget",
+                    "text": "Comfortable with mid-range family budgets — hotels with pools, sit-down restaurants, taxis over public transit when there are kids in tow.",
+                    "topics": ["travel_preferences", "budget"]
+                }
+            ],
+            "pastTrips": [
+                {
+                    "tripId": "seed-bhavana-goa",
+                    "city": "goa",
+                    "dates": { "start": "2024-12-22", "end": "2024-12-28" },
+                    "interests": ["outdoors", "slow", "landmarks"],
+                    "summary": "Family Christmas week in Goa, December 2024. The kids loved Tambdi Surla Waterfalls and the Biodiversity Park; family seafood dinners at The Fishermans Wharf and Martin's Corner; quick history detour at the Houses of Goa Museum.",
+                    "pickedPoiIds": [
+                        "ChIJRTUYPI5MvjsRxAHlDWzTpYY",
+                        "ChIJAxaYkwrAvzsRMoGzIYj2STg",
+                        "ChIJgRxLwR4HvzsRLLg5CxlKB4M",
+                        "ChIJBaXfv4oIvzsRw_tzqN9h6gs",
+                        "ChIJY7N6pt22vzsRld7p1M9Cvgc"
+                    ]
+                },
+                {
+                    "tripId": "seed-bhavana-paris",
+                    "city": "paris",
+                    "dates": { "start": "2025-06-15", "end": "2025-06-22" },
+                    "interests": ["landmarks", "culture", "outdoors"],
+                    "summary": "Week-long family trip to Paris in June 2025. Kid-friendly stops at the Musée d'Orsay and Orangerie, picnics at Parc Monceau and Bois de Vincennes, and a relaxed family dinner at Le Marais Restaurant.",
+                    "pickedPoiIds": [
+                        "ChIJG5Qwtitu5kcR2CNEsYy9cdA",
+                        "ChIJo6qq6i5u5kcRCpYBp4rQP9w",
+                        "ChIJwxT3mL5v5kcRAsTd3v0lJOY",
+                        "ChIJ3UNa3cNy5kcR7W1Dkn-YBdY",
+                        "ChIJ0Y7Uk_lv5kcRxQMuMKFtVmc"
+                    ]
+                },
+                {
+                    "tripId": "seed-bhavana-singapore",
+                    "city": "singapore",
+                    "dates": { "start": "2025-10-10", "end": "2025-10-15" },
+                    "interests": ["landmarks", "outdoors", "culture"],
+                    "summary": "October 2025 family trip to Singapore. Days at the National Museum and National Gallery, half-day at Bukit Batok Nature Park, plus standout family meals at Burnt Ends and MERCI MARCEL Orchard.",
+                    "pickedPoiIds": [
+                        "ChIJD1u-EaMZ2jERaLhNfFkR45I",
+                        "ChIJFQzeR6cZ2jERgM6--iWeY-U",
+                        "ChIJs3oprUQQ2jERp8A9mbkPZJE",
+                        "ChIJuTpnZVQZ2jEReDI4VP2u_w0",
+                        "ChIJLZ9DYnIZ2jERQ51Am7WzJLM"
+                    ]
+                }
+            ]
+        },
+        {
+            "userId": "kyle",
+            "displayName": "Kyle",
+            "memories": [
+                {
+                    "id": "kyle:pref:profile",
+                    "text": "Travels as a couple. Loves rooftop bars, live jazz, contemporary art, and upscale food. Prefers urban destinations.",
+                    "topics": ["travel_preferences", "nightlife", "culture", "pair"]
+                },
+                {
+                    "id": "kyle:pref:budget",
+                    "text": "Comfortable spending high on luxury experiences — fine dining, premium cocktails, boutique hotels.",
+                    "topics": ["travel_preferences", "budget"]
+                }
+            ],
+            "pastTrips": [
+                {
+                    "tripId": "seed-kyle-barcelona",
+                    "city": "barcelona",
+                    "dates": { "start": "2024-10-05", "end": "2024-10-10" },
+                    "interests": ["nightlife", "culture"],
+                    "summary": "Long weekend in Barcelona, October 2024. Evenings at Big Bang Bar and Harlem Jazz Club, fine dining at El Nacional and tapas at Bodega Biarritz 1881, plus a day exploring the Barcelona History Museum (Casa Padellàs).",
+                    "pickedPoiIds": [
+                        "ChIJc0WMe_GipBIRJiU_pUq_bRc",
+                        "ChIJA1xtuF-ipBIRTOrAyhc4jLw",
+                        "ChIJU_0Go_iipBIRCtBkKxvbpMg",
+                        "ChIJM5FFbvKipBIRdWugDh577Ao",
+                        "ChIJA-c18FeipBIRw8n-UGwjVLk"
+                    ]
+                },
+                {
+                    "tripId": "seed-kyle-tokyo",
+                    "city": "tokyo",
+                    "dates": { "start": "2025-03-20", "end": "2025-03-27" },
+                    "interests": ["nightlife", "culture"],
+                    "summary": "Week-long couple's trip to Tokyo in March 2025. Live music at Blue Note Tokyo, dinner at NOBU Tokyo and New York Grill, late nights at Music Fashion Bar RUN, and a quieter morning at the Tokyo National Museum.",
+                    "pickedPoiIds": [
+                        "ChIJEX3XFIOOGGAR3XdJvRjWLyM",
+                        "ChIJmYBOrGaLGGARUHAVps9SV9k",
+                        "ChIJeZd_LC3zGGARwuG7DoPkZ9Q",
+                        "ChIJVYCAW5CLGGARIvNkkLut6Jw",
+                        "ChIJSbOHCtmNGGARCIAsf8Gz9Rw"
+                    ]
+                },
+                {
+                    "tripId": "seed-kyle-dubai",
+                    "city": "dubai",
+                    "dates": { "start": "2025-11-12", "end": "2025-11-17" },
+                    "interests": ["nightlife", "landmarks"],
+                    "summary": "5-day Dubai trip in November 2025 — luxury edition. Dinner In The Sky, drinks at Level 43 Sky Lounge and Monkey Bar, fine dining at CÉ LA VI and The Restaurant at Address Sky View.",
+                    "pickedPoiIds": [
+                        "ChIJu9dt-VFrXz4Rt9P7BryQvd4",
+                        "ChIJf2jFdoxCXz4RN9goPAKvuN8",
+                        "ChIJLXpp_bdDXz4RdPUPqcJ4nN4",
+                        "ChIJfQZqMTJDXz4RAzXhbWHDkYE",
+                        "ChIJmw6mvSlDXz4RAMArtyOhdIw"
+                    ]
+                }
+            ]
+        }
+    ]
+}
