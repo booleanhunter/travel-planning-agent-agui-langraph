@@ -276,6 +276,11 @@
     padding: 6px 8px;
     background: var(--bg);
 }
+.elicit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
 .elicit-submit {
     background: var(--primary);
     color: white;
@@ -283,12 +288,23 @@
     border-radius: var(--radius);
     padding: 8px 14px;
     font-weight: 500;
-    width: 100%;
-    margin-top: 4px;
+    flex: 1;
 }
 .elicit-submit:disabled {
     background: var(--border-strong);
     cursor: not-allowed;
+}
+.elicit-decline {
+    background: var(--bg);
+    color: var(--text-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    font-weight: 500;
+}
+.elicit-decline:hover {
+    background: var(--surface, var(--bg));
+    color: var(--text);
 }
 
 /* ---------- Follow-up chips ---------- */

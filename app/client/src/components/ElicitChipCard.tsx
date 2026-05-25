@@ -3,10 +3,15 @@ import type { ElicitPrimitiveSchema, ElicitSpec } from '../types';
 
 interface Props {
     spec: ElicitSpec;
+    /** action: accept — user submitted the form with values. */
     onSubmit: (values: Record<string, unknown>) => void;
+    /** action: decline — user explicitly chose to skip; continue without these. */
+    onDecline?: () => void;
+    /** action: cancel — user dismissed (Esc / outside click). Quiet end of turn. */
+    onCancel?: () => void;
 }
 
-export function ElicitChipCard({ spec, onSubmit }: Props) {
+export function ElicitChipCard({ spec, onSubmit, onDecline, onCancel }: Props) {
     const [values, setValues] = useState<Record<string, unknown>>({});
 
     // Initialize defaults from the schema on first render.
@@ -19,6 +24,16 @@ export function ElicitChipCard({ spec, onSubmit }: Props) {
         }
         setValues(initial);
     }, [spec]);
+
+    // Esc key → cancel action.
+    useEffect(() => {
+        if (!onCancel) return;
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onCancel();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onCancel]);
 
     const setValue = (name: string, v: unknown) => setValues((s) => ({ ...s, [name]: v }));
 
@@ -49,14 +64,21 @@ export function ElicitChipCard({ spec, onSubmit }: Props) {
                 />
             ))}
 
-            <button
-                type="button"
-                className="elicit-submit"
-                onClick={handleSubmit}
-                disabled={!hasAnyValue}
-            >
-                Continue
-            </button>
+            <div className="elicit-actions">
+                {onDecline && (
+                    <button type="button" className="elicit-decline" onClick={onDecline}>
+                        Skip
+                    </button>
+                )}
+                <button
+                    type="button"
+                    className="elicit-submit"
+                    onClick={handleSubmit}
+                    disabled={!hasAnyValue}
+                >
+                    Continue
+                </button>
+            </div>
         </div>
     );
 }

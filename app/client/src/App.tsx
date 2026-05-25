@@ -86,6 +86,7 @@ export function App() {
         [stream],
     );
 
+    /** action: accept — fill slots and continue planning. */
     const submitElicit = useCallback(
         (values: Record<string, unknown>) => {
             const destination = values.destination as City | undefined;
@@ -108,6 +109,19 @@ export function App() {
         },
         [stream],
     );
+
+    /** action: decline — user explicitly skipped; agent plans without those slots. */
+    const declineElicit = useCallback(() => {
+        stream.submitTurn({
+            userMessage: "I'd like to skip those details and continue with what we have.",
+            userDeclinedElicit: true,
+        });
+    }, [stream]);
+
+    /** action: cancel — user dismissed (Esc or outside click). Quiet local clear, no turn. */
+    const cancelElicit = useCallback(() => {
+        stream.clearElicit();
+    }, [stream]);
 
     const handleSave = useCallback(async () => {
         if (pickedPois.length === 0) return;
@@ -157,7 +171,12 @@ export function App() {
     );
 
     const elicitSlot = stream.elicit ? (
-        <ElicitChipCard spec={stream.elicit} onSubmit={submitElicit} />
+        <ElicitChipCard
+            spec={stream.elicit}
+            onSubmit={submitElicit}
+            onDecline={declineElicit}
+            onCancel={cancelElicit}
+        />
     ) : null;
 
     const followupSlot = useMemo(() => {
