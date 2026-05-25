@@ -1,6 +1,6 @@
 import { MemoryAPIClient, type WorkingMemoryResponse } from 'agent-memory-client';
-import { config } from '../../../config.js';
-import type { UserPreferences } from '../../../types.js';
+import { config } from '#config';
+import type { UserPreferences } from '../types.js';
 
 let client: MemoryAPIClient | null = null;
 

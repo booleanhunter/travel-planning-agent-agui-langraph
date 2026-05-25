@@ -1,12 +1,12 @@
 import express from 'express';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
-import { config } from './config.js';
-import { ensurePoiIndex } from './modules/places/domain/places-service.js';
-import { closeRedis } from './lib/redis.js';
-import chatRouter from './modules/ai/api/chat.js';
-import mcpRouter from './modules/ai/api/mcp-http.js';
-import tripsRouter from './modules/trips/api/trips-routes.js';
+import { config } from '#config';
+import { ensurePoiIndex } from '#modules/places/domain/places-service.js';
+import { closeRedis } from '#lib/redis.js';
+import chatRouter from '#modules/ai/api/chat.js';
+import mcpRouter from '#modules/ai/api/mcp-http.js';
+import tripsRouter from '#modules/trips/api/trips-routes.js';
 
 const app = express();
 

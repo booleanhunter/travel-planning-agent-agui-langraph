@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
-import { getChatModel } from '../../helpers/llm.js';
-import { getPreferences, getConversation } from '../../../user/domain/user-service.js';
-import { ensureDraft } from '../../../trips/domain/trips-service.js';
+import { getChatModel } from '#modules/ai/helpers/llm.js';
+import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
+import { ensureDraft } from '#modules/trips/domain/trips-service.js';
+import { CitySchema } from '#modules/places/types.js';
 import type { AgentStateType } from '../state.js';
 
 const TravelAgentOutput = z.object({
@@ -20,12 +21,9 @@ const TravelAgentOutput = z.object({
                 '"itineraryPlanning" = actively planning or refining a trip ("plan a trip to Bangalore", "build me a day"). ' +
                 '"general" = anything else, including form submissions, small talk, or replies to a previous question.',
         ),
-    destination: z
-        .enum(['bangalore', 'mumbai', 'barcelona'])
-        .nullable()
-        .describe(
-            'City being planned. null if not mentioned in this turn AND not visible in the prior conversation.',
-        ),
+    destination: CitySchema.nullable().describe(
+        'City being planned. null if not mentioned in this turn AND not visible in the prior conversation.',
+    ),
     dates: z
         .object({ start: z.string(), end: z.string() })
         .nullable()

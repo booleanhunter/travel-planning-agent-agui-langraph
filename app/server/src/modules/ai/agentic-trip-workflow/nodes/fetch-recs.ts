@@ -1,4 +1,4 @@
-import { searchPois } from '../../../places/domain/places-service.js';
+import { searchPois } from '#modules/places/domain/places-service.js';
 import type { AgentStateType } from '../state.js';
 
 export async function fetchRecs(state: AgentStateType): Promise<Partial<AgentStateType>> {

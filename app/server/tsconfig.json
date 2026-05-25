@@ -9,7 +9,12 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "isolatedModules": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "#modules/*": ["./src/modules/*"],
+      "#lib/*": ["./src/lib/*"],
+      "#config": ["./src/config.js"]
+    }
   },
   "include": ["src/**/*"]
 }

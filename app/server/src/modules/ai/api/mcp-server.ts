@@ -7,6 +7,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ElicitRequestFormParams } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { CitySchema, POISchema } from '#modules/places/types.js';
+import { WeatherSchema } from '#modules/weather/types.js';
 import { graph } from '../agentic-trip-workflow/graph.js';
 import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 
@@ -14,6 +16,77 @@ const USER_ID = 'ashwin';
 
 function newSessionId(): string {
     return `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ----- Output schema for `planTrip` -------------------------------------------------
+// Declared on the tool so MCP-aware clients can render/parse the structured data
+// natively. See https://modelcontextprotocol.io/specification/draft/server/tools
+// (search "outputSchema").
+//
+// Sub-shapes are derived from the canonical domain types via .pick() — single
+// source of truth, no duplicate field declarations.
+
+const PoiShape = POISchema.pick({
+    id: true,
+    name: true,
+    description: true,
+    rating: true,
+    category: true,
+});
+
+const PickedPoiShape = POISchema.pick({ id: true, name: true });
+
+const planTripOutputSchema = {
+    destination: CitySchema.optional(),
+    dates: z.object({ start: z.string(), end: z.string() }).optional(),
+    interests: z.array(z.string()),
+    weather: WeatherSchema.optional(),
+    pois: z.array(PoiShape),
+    pickedPois: z.array(PickedPoiShape),
+    suggestedActions: z.array(z.string()),
+    response: z.string(),
+};
+
+/** Default empty shape — used by early-return paths (cancel, loop exceeded). */
+function emptyStructured() {
+    return {
+        interests: [],
+        pois: [],
+        pickedPois: [],
+        suggestedActions: [],
+        response: '',
+    };
+}
+
+/**
+ * Pack the agent's final state into an MCP tool result. The human-readable
+ * `content` carries the prose; `structuredContent` carries the parsed data
+ * matching `planTripOutputSchema` so MCP-aware clients can render or reason
+ * about the actual POIs / weather / trip context without re-deriving them.
+ */
+function buildToolResult(result: AgentStateType) {
+    return {
+        content: [{ type: 'text' as const, text: result.response ?? '(no response)' }],
+        structuredContent: {
+            destination: result.destination,
+            dates: result.dates,
+            interests: result.interests,
+            weather: result.weather,
+            pois: result.pois.map((p) => ({
+                id: p.id,
+                name: p.name,
+                description:
+                    p.description.length > 140
+                        ? p.description.slice(0, 137) + '…'
+                        : p.description,
+                rating: p.rating,
+                category: p.category,
+            })),
+            pickedPois: result.pickedPois.map((p) => ({ id: p.id, name: p.name })),
+            suggestedActions: result.suggestedActions,
+            response: result.response ?? '',
+        },
+    };
 }
 
 /**
@@ -56,6 +129,7 @@ export function createMcpServer(): McpServer {
                         "The user's initial request, e.g. 'Plan a trip to Bangalore in June for food'",
                     ),
             },
+            outputSchema: planTripOutputSchema,
         },
         async ({ userMessage }) => {
             const sessionId = newSessionId();
@@ -72,9 +146,8 @@ export function createMcpServer(): McpServer {
                 const result = (await graph.invoke(state)) as AgentStateType;
 
                 if (!result.elicit) {
-                    return {
-                        content: [{ type: 'text', text: result.response ?? '(no response)' }],
-                    };
+                    console.log(`no elicit requested, returning result`);
+                    return buildToolResult(result);
                 }
 
                 // Prefer the agent's contextual `response` over the boilerplate elicit
@@ -85,6 +158,7 @@ export function createMcpServer(): McpServer {
                     requestedSchema: result.elicit
                         .requestedSchema as ElicitRequestFormParams['requestedSchema'],
                 };
+                console.log(`eliciting from client — session=${sessionId} user=${USER_ID} elicit=${JSON.stringify(elicitParams)}`);
                 const reply = await server.server.elicitInput(elicitParams);
 
                 if (reply.action === 'accept' && reply.content) {
@@ -120,10 +194,11 @@ export function createMcpServer(): McpServer {
                     return {
                         content: [
                             {
-                                type: 'text',
+                                type: 'text' as const,
                                 text: 'Planning cancelled — let me know when you want to start again.',
                             },
                         ],
+                        structuredContent: emptyStructured(),
                     };
                 }
             }
@@ -131,10 +206,11 @@ export function createMcpServer(): McpServer {
             return {
                 content: [
                     {
-                        type: 'text',
+                        type: 'text' as const,
                         text: 'Elicitation loop exceeded — giving up after 5 rounds.',
                     },
                 ],
+                structuredContent: emptyStructured(),
                 isError: true,
             };
         },

@@ -1,4 +1,5 @@
-import type { PastTrip, POI, City } from '../../../types.js';
+import type { POI, City } from '#modules/places/types.js';
+import type { PastTrip } from '../types.js';
 import {
     ensureTripDraft as repoEnsureTripDraft,
     updateTripPickedPois as repoUpdateTripPickedPois,

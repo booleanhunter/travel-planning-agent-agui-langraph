@@ -9,8 +9,8 @@
  *   5. general                           → TravelAgent → FollowUp
  */
 
-import { graph } from '../modules/ai/agentic-trip-workflow/graph.js';
-import { closeRedis } from '../lib/redis.js';
+import { graph } from '#modules/ai/agentic-trip-workflow/graph.js';
+import { closeRedis } from '#lib/redis.js';
 
 async function main(): Promise<void> {
     const userId = 'ashwin';

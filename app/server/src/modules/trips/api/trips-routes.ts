@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPreferences, getConversation } from '../../user/domain/user-service.js';
+import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 import { getTrip, listPastTrips, markComplete } from '../domain/trips-service.js';
 
 const router = Router();

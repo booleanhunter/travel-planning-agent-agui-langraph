@@ -1,4 +1,4 @@
-import type { UserPreferences } from '../../../types.js';
+import type { UserPreferences } from '../types.js';
 import {
     searchUserPreferences as repoSearchUserPreferences,
     getConversation as repoGetConversation,

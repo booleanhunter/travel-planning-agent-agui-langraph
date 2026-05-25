@@ -1,4 +1,4 @@
-import type { City, POI } from '../../../types.js';
+import type { City, POI } from '../types.js';
 import {
     searchPois as repoSearchPois,
     upsertPoi as repoUpsertPoi,
