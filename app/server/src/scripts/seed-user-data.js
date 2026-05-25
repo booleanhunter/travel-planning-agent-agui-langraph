@@ -6,8 +6,8 @@
  *   - For each past trip:
  *       - Joins pickedPoiIds against datasets/pois.json to materialize full POI
  *         records.
- *       - Writes a complete trip record to Redis trip-store (HASH + past-trips
- *         SET) so the memory drawer can list it.
+ *       - Writes a complete trip record to Redis trip-store (HASH) so the
+ *         memory drawer can list it. Listing is by KEYS pattern; no index SET.
  *       - ALSO writes a trip-summary memory to AMS with topics
  *         ['trip_history', city, ...interests] so the future getPreviousTrips
  *         tool can find it via semantic search.
@@ -20,7 +20,6 @@
  *
  * Writes:
  *   Redis HASHes: user:{userId}:trip:{tripId}
- *   Redis SETs:   user:{userId}:trips, user:{userId}:past-trips
  *   AMS long-term memories (preferences + trip summaries)
  *
  * Run: npm run seed:users -w server
@@ -65,8 +64,6 @@ async function writeTrip(redis, userId, trip, pickedPois) {
         updatedAt: now,
         completedAt: now,
     });
-    await redis.sAdd(`user:${userId}:trips`, trip.tripId);
-    await redis.sAdd(`user:${userId}:past-trips`, trip.tripId);
 }
 
 /** Write a batch of MemoryRecords to AMS long-term memory. */
