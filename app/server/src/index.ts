@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { ensurePoiIndex } from './modules/places/domain/places-service.js';
 import { closeRedis } from './lib/redis.js';
 import chatRouter from './modules/ai/api/chat.js';
+import mcpRouter from './modules/ai/api/mcp-http.js';
 import tripsRouter from './modules/trips/api/trips-routes.js';
 
 const app = express();
@@ -15,6 +16,7 @@ app.use(cookieParser());
 
 app.use('/api/chat', chatRouter);
 app.use('/api/user', tripsRouter);
+app.use('/mcp', mcpRouter);
 
 app.get('/api/health', (_req, res) => {
     res.json({ ok: true, app: 'trip-itinerary-builder' });
