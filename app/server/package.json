@@ -7,7 +7,6 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "mcp:stdio": "tsx src/mcp-stdio.ts",
     "seed:pois": "tsx src/scripts/seed-pois.ts",
     "typecheck": "tsc --noEmit"
   },
