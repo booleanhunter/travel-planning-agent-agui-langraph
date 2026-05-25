@@ -121,7 +121,7 @@ export function createMcpServer(): McpServer {
         {
             title: 'Plan a trip',
             description:
-                'Plan a multi-day trip to one of three cities (Bangalore, Mumbai, Barcelona). ' +
+                'Plan a multi-day trip to one of 33 cities worldwide (India, Asia, Europe, MENA, Americas, Oceania). ' +
                 'If destination, dates, or interests are missing, the tool will elicit them from the client.',
             inputSchema: {
                 userMessage: z

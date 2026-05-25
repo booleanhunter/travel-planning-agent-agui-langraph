@@ -12,7 +12,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed:pois": "tsx src/scripts/seed-pois.ts",
+    "fetch:pois": "node src/scripts/fetch-pois.js",
+    "seed:pois": "node src/scripts/seed-pois.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

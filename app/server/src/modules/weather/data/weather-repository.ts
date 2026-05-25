@@ -3,7 +3,13 @@ import type { Weather } from '../types.js';
 
 type Forecast = Omit<Weather, 'city' | 'month'>;
 
-const WEATHER: Record<City, Record<number, Forecast>> = {
+/**
+ * Hardcoded climate normals per city per month. Only a subset of cities
+ * have data — for cities without entries, `lookupWeather` returns undefined
+ * and the agent's FetchWeather node skips writing weather to state.
+ * Add entries here as needed.
+ */
+const WEATHER: Partial<Record<City, Record<number, Forecast>>> = {
     bangalore: {
         1: { high: 28, low: 16, condition: 'cool & dry', precipitationChance: 0.05 },
         2: { high: 31, low: 17, condition: 'warm & dry', precipitationChance: 0.05 },
@@ -48,9 +54,12 @@ const WEATHER: Record<City, Record<number, Forecast>> = {
     },
 };
 
-export function lookupWeather(city: City, isoDate?: string): Weather {
+export function lookupWeather(city: City, isoDate?: string): Weather | undefined {
+    const cityData = WEATHER[city];
+    if (!cityData) return undefined;
     const month = isoDate ? new Date(isoDate).getUTCMonth() + 1 : new Date().getUTCMonth() + 1;
     const m = Math.max(1, Math.min(12, month));
-    const f = WEATHER[city][m];
+    const f = cityData[m];
+    if (!f) return undefined;
     return { city, month: m, ...f };
 }

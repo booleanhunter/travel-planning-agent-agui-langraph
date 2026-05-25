@@ -2,7 +2,44 @@
  * Types shared with the server. Hand-mirrored from server/src/types.ts.
  */
 
-export type City = 'bangalore' | 'mumbai' | 'barcelona';
+/**
+ * Cities the agent can plan trips for.
+ * KEEP IN SYNC with server/src/modules/places/types.ts CitySchema.
+ */
+export type City =
+    | 'bangalore'
+    | 'mumbai'
+    | 'delhi'
+    | 'goa'
+    | 'jaipur'
+    | 'kochi'
+    | 'manali'
+    | 'hyderabad'
+    | 'tokyo'
+    | 'kyoto'
+    | 'seoul'
+    | 'singapore'
+    | 'bangkok'
+    | 'hanoi'
+    | 'ubud'
+    | 'barcelona'
+    | 'lisbon'
+    | 'paris'
+    | 'london'
+    | 'berlin'
+    | 'amsterdam'
+    | 'rome'
+    | 'prague'
+    | 'istanbul'
+    | 'dubai'
+    | 'cape-town'
+    | 'marrakech'
+    | 'new-york'
+    | 'san-francisco'
+    | 'vancouver'
+    | 'mexico-city'
+    | 'buenos-aires'
+    | 'sydney';
 
 export type POICategory = 'food' | 'culture' | 'outdoors' | 'nightlife' | 'shopping' | 'other';
 
