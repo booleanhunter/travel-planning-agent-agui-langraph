@@ -1,9 +1,11 @@
 /**
- * User-scoped trip storage in Redis. Replaces the old AMS-episodic write path.
+ * User-scoped trip storage in Redis.
  *
  *   user:{userId}:trip:{tripId}    HASH  — the trip record (draft or completed)
- *   user:{userId}:trips            SET   — all tripIds for this user
- *   user:{userId}:past-trips       SET   — only completed tripIds
+ *
+ * Listing happens by KEYS pattern scan + per-hash status filter — no
+ * separate index SETs. For our scale (<<1000 trips per user) this is
+ * trivially fast and keeps the data model to one structure per concept.
  *
  * Convention: tripId == sessionId (one trip per session in v1).
  */
@@ -19,8 +21,7 @@ interface TripDraftUpsert {
 }
 
 const tripKey = (userId: string, tripId: string) => `user:${userId}:trip:${tripId}`;
-const tripsKey = (userId: string) => `user:${userId}:trips`;
-const pastTripsKey = (userId: string) => `user:${userId}:past-trips`;
+const tripKeyPrefix = (userId: string) => `user:${userId}:trip:`;
 
 /**
  * Idempotently ensure a draft trip record exists for this session, and merge
@@ -51,7 +52,6 @@ export async function ensureTripDraft(
     if (fields.endDate) baseUpsert.endDate = fields.endDate;
 
     await redis.hSet(key, baseUpsert);
-    await redis.sAdd(tripsKey(userId), tripId);
 }
 
 /** Replace the picked POIs for the trip with this exact set. */
@@ -70,7 +70,7 @@ export async function updateTripPickedPois(
     });
 }
 
-/** Flip status to completed and add to the past-trips set. */
+/** Flip status to completed. */
 export async function markTripComplete(userId: string, tripId: string): Promise<PastTrip | null> {
     const redis = await getRedis();
     const now = new Date().toISOString();
@@ -81,7 +81,6 @@ export async function markTripComplete(userId: string, tripId: string): Promise<
         completedAt: now,
         updatedAt: now,
     });
-    await redis.sAdd(pastTripsKey(userId), tripId);
 
     return getTrip(userId, tripId);
 }
@@ -94,15 +93,30 @@ export async function getTrip(userId: string, tripId: string): Promise<PastTrip 
     return hashToTrip(tripId, h);
 }
 
-/** List all completed trips for a user. */
+/**
+ * List all completed trips for a user, sorted newest-first by completedAt.
+ *
+ * Strategy: `KEYS user:<id>:trip:*` for this user's namespace, then HGETALL
+ * each and filter by status. Acceptable for our scale; for production scale
+ * we'd reintroduce a sorted-set index by completedAt.
+ */
 export async function listPastTrips(userId: string): Promise<PastTrip[]> {
     const redis = await getRedis();
-    const tripIds = await redis.sMembers(pastTripsKey(userId));
-    if (!tripIds.length) return [];
-    const hashes = await Promise.all(tripIds.map((id) => redis.hGetAll(tripKey(userId, id))));
-    return tripIds
-        .map((id, i) => hashToTrip(id, hashes[i]))
-        .filter((t): t is PastTrip => t !== null);
+    const prefix = tripKeyPrefix(userId);
+    const keys = await redis.keys(`${prefix}*`);
+    if (!keys.length) return [];
+
+    const hashes = await Promise.all(keys.map((k) => redis.hGetAll(k)));
+    const trips: PastTrip[] = [];
+    for (let i = 0; i < keys.length; i++) {
+        const h = hashes[i];
+        if (!h?.status || h.status !== 'completed') continue;
+        const tripId = keys[i].slice(prefix.length);
+        const trip = hashToTrip(tripId, h);
+        if (trip) trips.push(trip);
+    }
+    trips.sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+    return trips;
 }
 
 function hashToTrip(tripId: string, h: Record<string, string>): PastTrip | null {
