@@ -654,6 +654,20 @@
     font-weight: 600;
     margin: 0 0 8px;
 }
+.drawer-reset {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.drawer-reset:hover {
+    background: var(--red, #fee);
+    border-color: var(--red, #c00);
+    color: var(--red, #c00);
+}
 .drawer-row {
     display: flex;
     justify-content: space-between;

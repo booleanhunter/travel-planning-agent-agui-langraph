@@ -10,10 +10,9 @@ import { WeatherCard } from './components/WeatherCard';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import type { POI, PastTrip, City } from './types';
 
-const USER_ID = 'ashwin';
-
 export function App() {
     const stream = useAgentStream();
+    const userId = stream.userId;
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -130,13 +129,24 @@ export function App() {
             const res = await fetch('/api/user/save-trip', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: USER_ID, tripId: stream.sessionId }),
+                body: JSON.stringify({ userId, tripId: stream.sessionId }),
             });
             if (res.ok) setSavedAt(new Date().toLocaleTimeString());
         } finally {
             setSaving(false);
         }
-    }, [pickedPois.length, stream.sessionId]);
+    }, [pickedPois.length, stream.sessionId, userId]);
+
+    /** Reset the working trip slot — clears trip-store HASH + AMS working memory. */
+    const handleReset = useCallback(async () => {
+        await fetch('/api/user/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, sessionId: stream.sessionId }),
+        });
+        stream.resetCanvas();
+        setSavedAt(null);
+    }, [stream, userId]);
 
     const handleLoadTrip = useCallback(
         async (trip: PastTrip) => {
@@ -146,7 +156,7 @@ export function App() {
                 const res = await fetch('/api/user/load-trip', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: USER_ID, tripId: trip.tripId }),
+                    body: JSON.stringify({ userId, tripId: trip.tripId }),
                 });
                 if (!res.ok) return;
                 const data = (await res.json()) as {
@@ -167,7 +177,7 @@ export function App() {
                 console.error('load-trip failed', err);
             }
         },
-        [stream],
+        [stream, userId],
     );
 
     const elicitSlot = stream.elicit ? (
@@ -226,7 +236,7 @@ export function App() {
                     <h1>Trip Itinerary Builder</h1>
                 </div>
                 <div className="header-user">
-                    <span>Ashwin</span>
+                    <span style={{ textTransform: 'capitalize' }}>{userId}</span>
                 </div>
             </header>
             <div className="main">
@@ -285,9 +295,11 @@ export function App() {
                 />
             </div>
             <MemoryDrawer
+                userId={userId}
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
                 onLoadTrip={handleLoadTrip}
+                onReset={handleReset}
             />
         </div>
     );

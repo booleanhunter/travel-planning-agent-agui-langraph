@@ -18,6 +18,7 @@ interface TripDraftUpsert {
     city?: City;
     startDate?: string;
     endDate?: string;
+    interests?: string[];
 }
 
 const tripKey = (userId: string, tripId: string) => `user:${userId}:trip:${tripId}`;
@@ -46,10 +47,12 @@ export async function ensureTripDraft(
         baseUpsert.status = 'draft';
         baseUpsert.createdAt = now;
         baseUpsert.pickedPois = '[]';
+        baseUpsert.interests = '[]';
     }
     if (fields.city) baseUpsert.city = fields.city;
     if (fields.startDate) baseUpsert.startDate = fields.startDate;
     if (fields.endDate) baseUpsert.endDate = fields.endDate;
+    if (fields.interests?.length) baseUpsert.interests = JSON.stringify(fields.interests);
 
     await redis.hSet(key, baseUpsert);
 }
@@ -122,10 +125,16 @@ export async function listPastTrips(userId: string): Promise<PastTrip[]> {
 function hashToTrip(tripId: string, h: Record<string, string>): PastTrip | null {
     if (!h || !h.tripId) return null;
     let pickedPois: POI[] = [];
+    let interests: string[] = [];
     try {
         pickedPois = JSON.parse(h.pickedPois ?? '[]');
     } catch {
         pickedPois = [];
+    }
+    try {
+        interests = JSON.parse(h.interests ?? '[]');
+    } catch {
+        interests = [];
     }
     const dates = h.startDate && h.endDate ? { start: h.startDate, end: h.endDate } : undefined;
     return {
@@ -133,8 +142,15 @@ function hashToTrip(tripId: string, h: Record<string, string>): PastTrip | null 
         sessionId: tripId, // tripId == sessionId in v1
         city: (h.city ?? 'bangalore') as City,
         dates,
+        interests,
         pickedPois,
         createdAt: h.createdAt,
         completedAt: h.completedAt,
     };
+}
+
+/** Delete a trip's HASH outright. Used by Reset to clear the working slot. */
+export async function deleteTrip(userId: string, tripId: string): Promise<void> {
+    const redis = await getRedis();
+    await redis.del(tripKey(userId, tripId));
 }

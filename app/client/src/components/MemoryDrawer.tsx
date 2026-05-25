@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import type { PastTrip, UserPreferences } from '../types';
 
 interface Props {
+    userId: string;
     open: boolean;
     onClose: () => void;
     onLoadTrip: (trip: PastTrip) => void;
+    onReset: () => void | Promise<void>;
 }
 
 interface Profile {
@@ -13,20 +15,18 @@ interface Profile {
     pastTrips: PastTrip[];
 }
 
-const USER_ID = 'ashwin';
-
-export function MemoryDrawer({ open, onClose, onLoadTrip }: Props) {
+export function MemoryDrawer({ userId, open, onClose, onLoadTrip, onReset }: Props) {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (!open) return;
         setLoading(true);
-        fetch(`/api/user/profile?userId=${USER_ID}`)
+        fetch(`/api/user/profile?userId=${userId}`)
             .then((r) => r.json())
             .then((data: Profile) => setProfile(data))
             .finally(() => setLoading(false));
-    }, [open]);
+    }, [open, userId]);
 
     useEffect(() => {
         if (!open) return;
@@ -45,6 +45,9 @@ export function MemoryDrawer({ open, onClose, onLoadTrip }: Props) {
             <div className="drawer" onClick={(e) => e.stopPropagation()}>
                 <div className="drawer-header">
                     <strong>Memory & history</strong>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
+                        ({userId})
+                    </span>
                     <button className="drawer-close" onClick={onClose} aria-label="Close drawer">
                         ×
                     </button>
@@ -96,6 +99,24 @@ export function MemoryDrawer({ open, onClose, onLoadTrip }: Props) {
                                 trips.
                             </div>
                         )}
+                    </div>
+
+                    <div className="drawer-section">
+                        <h3>Current planning session</h3>
+                        <button
+                            type="button"
+                            className="drawer-reset"
+                            onClick={() => {
+                                void onReset();
+                                onClose();
+                            }}
+                        >
+                            Reset working trip
+                        </button>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                            Clears the in-progress trip + conversation history. Past trips below
+                            stay.
+                        </div>
                     </div>
 
                     <div className="drawer-section">

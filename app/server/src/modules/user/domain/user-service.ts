@@ -3,8 +3,10 @@ import {
     searchUserPreferences as repoSearchUserPreferences,
     getConversation as repoGetConversation,
     appendTurn as repoAppendTurn,
+    saveLongTermMemory as repoSaveLongTermMemory,
+    deleteWorkingMemory as repoDeleteWorkingMemory,
 } from '../data/ams-repository.js';
-import type { WorkingMemoryResponse } from 'agent-memory-client';
+import type { MemoryRecord, WorkingMemoryResponse } from 'agent-memory-client';
 
 export function getPreferences(userId: string): Promise<UserPreferences | undefined> {
     return repoSearchUserPreferences(userId);
@@ -20,4 +22,12 @@ export function appendTurn(
     messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
 ): Promise<void> {
     return repoAppendTurn(sessionId, userId, messages);
+}
+
+export function saveLongTermMemory(records: MemoryRecord[]): Promise<void> {
+    return repoSaveLongTermMemory(records);
+}
+
+export function deleteWorkingMemory(sessionId: string): Promise<void> {
+    return repoDeleteWorkingMemory(sessionId);
 }

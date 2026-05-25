@@ -39,17 +39,28 @@ interface AgentStream {
     resetCanvas: () => void;
 }
 
-const USER_ID = 'ashwin';
-
-function newSessionId(): string {
-    return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/**
+ * userId comes from the `?user=` URL param so the demo can switch personas
+ * (ashwin / bhavana / kyle) without rebuilding. Defaults to 'ashwin'.
+ */
+function readUserIdFromUrl(): string {
+    if (typeof window === 'undefined') return 'ashwin';
+    const u = new URLSearchParams(window.location.search).get('user');
+    return u?.trim() || 'ashwin';
 }
 
+/**
+ * sessionId is fixed per user. AMS conversation + trip-store working slot
+ * persist across page reloads. Reset (via the memory drawer) wipes them.
+ */
+const SESSION_ID = 'newSessionId';
+
 export function useAgentStream(): AgentStream & {
+    userId: string;
     sessionId: string;
-    setSessionId: (id: string) => void;
 } {
-    const [sessionId, setSessionId] = useState<string>(() => newSessionId());
+    const [userId] = useState<string>(() => readUserIdFromUrl());
+    const sessionId = SESSION_ID;
     const agentRef = useRef<HttpAgent | null>(null);
 
     const [pois, setPois] = useState<POI[]>([]);
@@ -105,7 +116,6 @@ export function useAgentStream(): AgentStream & {
         setPickedPois([]);
         setError(null);
         setResolvedSlots({});
-        setSessionId(newSessionId());
     }, []);
 
     const submitTurn = useCallback(
@@ -125,7 +135,7 @@ export function useAgentStream(): AgentStream & {
 
             // Start from previously resolved slots, then let input override
             const stateToSend: Record<string, unknown> = {
-                userId: USER_ID,
+                userId,
                 ...resolvedSlots,
             };
             if (input.destination) stateToSend.destination = input.destination;
@@ -204,7 +214,7 @@ export function useAgentStream(): AgentStream & {
         submitTurn,
         clearElicit,
         resetCanvas,
+        userId,
         sessionId,
-        setSessionId,
     };
 }

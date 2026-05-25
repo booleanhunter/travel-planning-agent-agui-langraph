@@ -1,4 +1,4 @@
-import { MemoryAPIClient, type WorkingMemoryResponse } from 'agent-memory-client';
+import { MemoryAPIClient, type MemoryRecord, type WorkingMemoryResponse } from 'agent-memory-client';
 import { config } from '#config';
 import type { UserPreferences } from '../types.js';
 
@@ -64,6 +64,22 @@ export async function searchUserPreferences(userId: string): Promise<UserPrefere
  */
 export async function getConversation(sessionId: string): Promise<WorkingMemoryResponse | null> {
     return getAms().getWorkingMemory(sessionId);
+}
+
+/**
+ * Bulk-write long-term memory records. Used by archiveTripToMemory and the
+ * data seed script. Memory IDs are deterministic — re-writes overwrite.
+ */
+export async function saveLongTermMemory(records: MemoryRecord[]): Promise<void> {
+    await getAms().createLongTermMemory(records);
+}
+
+/**
+ * Wipe the working memory for a session. Used by the Reset flow so the
+ * conversation history doesn't bleed into the user's next planning attempt.
+ */
+export async function deleteWorkingMemory(sessionId: string): Promise<void> {
+    await getAms().deleteWorkingMemory(sessionId);
 }
 
 /**

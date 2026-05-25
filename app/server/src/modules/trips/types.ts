@@ -6,6 +6,7 @@ export const PastTripSchema = z.object({
     sessionId: z.string(),
     city: CitySchema,
     dates: z.object({ start: z.string(), end: z.string() }).optional(),
+    interests: z.array(z.string()).default([]),
     /** Picked places stored as full POI records for round-tripping to the UI. */
     pickedPois: z.array(POISchema),
     createdAt: z.string().optional(),
