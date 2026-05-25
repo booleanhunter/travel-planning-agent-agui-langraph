@@ -38,7 +38,7 @@ const TravelAgentOutput = z.object({
 
 const SYSTEM_PROMPT = (
     today: string,
-) => `You are a friendly travel agent helping plan trips to one of three cities: Bangalore, Mumbai, or Barcelona.
+) => `You are a friendly travel agent helping plan trips to one of 33 cities worldwide (in India, East/SE Asia, Europe, Middle East/Africa, the Americas, and Oceania).
 Today's date is ${today}.
 
 Your job on each turn is to:

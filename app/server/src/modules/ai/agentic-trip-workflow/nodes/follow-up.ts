@@ -9,6 +9,7 @@ import {
 import { getChatModel } from '#modules/ai/helpers/llm.js';
 import { appendTurn } from '#modules/user/domain/user-service.js';
 import type { POI } from '#modules/places/types.js';
+import { CitySchema, CITY_DISPLAY_NAMES } from '#modules/places/types.js';
 import type { AgentStateType } from '../state.js';
 import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
 import { makeUpdateItineraryTool } from '../tools.js';
@@ -108,11 +109,10 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
         properties.destination = {
             type: 'string',
             title: 'Where to?',
-            oneOf: [
-                { const: 'bangalore', title: 'Bangalore' },
-                { const: 'mumbai', title: 'Mumbai' },
-                { const: 'barcelona', title: 'Barcelona' },
-            ],
+            oneOf: CitySchema.options.map((id) => ({
+                const: id,
+                title: CITY_DISPLAY_NAMES[id],
+            })),
         };
         required.push('destination');
     }

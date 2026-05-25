@@ -20,8 +20,4 @@ export const config = {
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     agentMemoryServerUrl: process.env.AGENT_MEMORY_SERVER_URL ?? 'http://localhost:8000',
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
-    cities: ['bangalore', 'mumbai', 'barcelona'] as const,
-    seedPoiCountPerCity: 50,
 };
-
-export type City = (typeof config.cities)[number];
