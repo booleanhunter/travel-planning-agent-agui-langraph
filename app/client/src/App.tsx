@@ -44,17 +44,19 @@ export function App() {
         return [...stream.pois, ...orphans];
     }, [stream.pois, pickedPois]);
 
-    /** Build the "Here are the places I'd like to visit, in-order:" turn message
-     *  and submit it. The agent's FollowUp LLM picks this up, calls
-     *  `updateItinerary` with the matching place IDs, and Redis/state sync. */
+    /** Build an unambiguous "set my picks to EXACTLY these" turn message
+     *  and submit it. The agent's TravelAgent LLM picks this up, calls
+     *  `getPoiDetails` per named place to resolve real ids, then calls
+     *  `updateItinerary` with those ids. */
     const submitPlanUpdate = useCallback(
         (picks: POI[]) => {
             let userMessage: string;
             if (picks.length === 0) {
-                userMessage = "Please clear my plan — I don't want any places.";
+                userMessage = 'Set my picked places to: (none). I want to clear my plan.';
             } else {
-                const list = picks.map((poi, index) => `${index + 1}. ${poi.name}`).join('\n');
-                userMessage = `Here are the places I'd like to visit, in-order:\n${list}`;
+                const bullets = picks.map((poi) => `- ${poi.name}`).join('\n');
+                userMessage =
+                    `Set my picked places to EXACTLY this list (in this order, no additions):\n${bullets}`;
             }
             return stream.submitTurn({ userMessage });
         },

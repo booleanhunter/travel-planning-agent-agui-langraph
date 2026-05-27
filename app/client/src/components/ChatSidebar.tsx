@@ -19,9 +19,14 @@ interface Props {
 
 const NODE_LABEL: Record<string, string> = {
     TravelAgent: 'Understanding your request',
-    FetchRecs: 'Searching for places',
-    FetchWeather: 'Looking up weather',
     FollowUp: 'Composing response',
+    // Tool dots (reserved for a follow-up that wires tool-level streaming via
+    // graph.stream({ streamMode: ['updates', 'tools'] })). Labels pre-defined
+    // so the UI is ready when those events start firing.
+    'tool:searchPois': 'Searching for places',
+    'tool:getPoiDetails': 'Looking up place',
+    'tool:getWeather': 'Looking up weather',
+    'tool:updateItinerary': 'Updating itinerary',
 };
 
 function DotsBlock({ dots }: { dots: Record<string, DotStatus> }) {
