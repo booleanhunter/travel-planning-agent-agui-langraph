@@ -106,3 +106,26 @@ export async function searchPois({ city, interestQuery, k = 12 }: SearchOptions)
         };
     });
 }
+
+/**
+ * Fetch one POI by its id from the persistent HASH. Returns null if the id
+ * isn't in Redis. Used by `commitPicks` as a fallback when the in-memory
+ * candidate list doesn't carry the POI (e.g., the user clicks "Update plan"
+ * on a turn where no new searchPois ran).
+ */
+export async function getPoiById(id: string): Promise<POI | null> {
+    const redis = await getRedis();
+    const hash = (await redis.hGetAll(KEY_PREFIX + id)) as Record<string, string>;
+    if (!hash || !hash.name) return null;
+    return {
+        id,
+        name: hash.name,
+        description: hash.description ?? '',
+        city: hash.city as City,
+        category: (hash.category as POICategory) ?? 'other',
+        rating: Number(hash.rating ?? 0),
+        photoUrl: hash.photoUrl || null,
+        lat: Number(hash.lat ?? 0),
+        lng: Number(hash.lng ?? 0),
+    };
+}

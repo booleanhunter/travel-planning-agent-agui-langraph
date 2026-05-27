@@ -1,77 +1,13 @@
 import { z } from 'zod';
-import {
-    SystemMessage,
-    HumanMessage,
-    AIMessage,
-    ToolMessage,
-    type BaseMessage,
-} from '@langchain/core/messages';
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { getChatModel } from '#modules/ai/helpers/llm.js';
 import { appendTurn } from '#modules/user/domain/user-service.js';
-import type { POI } from '#modules/places/types.js';
-import { CitySchema, CITY_DISPLAY_NAMES } from '#modules/places/types.js';
-import type { AgentStateType } from '../state.js';
+import { ensureDraft } from '#modules/trips/domain/trips-service.js';
+import { CitySchema, CITY_DISPLAY_NAMES, type City } from '#modules/places/types.js';
+import type { AgentStateType, ToolCallRecord } from '../state.js';
 import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
-import { makeUpdateItineraryTool } from '../tools.js';
 
-// ----- Structured output for the final response --------------------------------------
-
-const FollowUpOutput = z.object({
-    textResponse: z
-        .string()
-        .describe(
-            "The final resolution for the user. Build on the agent's most recent reply; reference what's known so far (destination, dates, places, weather).",
-        ),
-    suggestedActions: z
-        .array(z.string())
-        .describe(
-            "Short follow-up chips the USER might tap to send as their next message — written in the user's first-person voice. " +
-                'Each chip should read like something the user would naturally type or click. ' +
-                'Good examples: "What should I pack?", "Make it more relaxed", "Save this trip", "Show me only cultural spots", "Plan a 3-day itinerary". ' +
-                'Bad examples (do NOT use these patterns): "Share your interests", "Request places", "Pick a destination", "Get packing tips" — these are imperatives directed at the user, not user-voiced prompts. ' +
-                'Return an empty array if no natural next step exists.',
-        ),
-});
-
-// ----- System prompts -----------------------------------------------------------------
-
-function buildSystemPrompt(state: AgentStateType): string {
-    const candidateList = state.pois.length
-        ? state.pois.map((poi) => `  - ${poi.id}: ${poi.name}`).join('\n')
-        : '  (none yet)';
-    const pickedList = state.pickedPois.length
-        ? state.pickedPois.map((poi) => `  - ${poi.id}: ${poi.name}`).join('\n')
-        : '  (none picked yet)';
-    return [
-        'You are a senior travel supervisor reviewing the chat history above.',
-        'Provide a final resolution based on everything discussed so far.',
-        "Build on the agent's most recent reply — do not repeat or contradict it,",
-        'and do not ask for information already answered or visible in the conversation.',
-        '',
-        "`suggestedActions` should be written in the user's first-person voice — what they might tap to send next, not instructions to the user.",
-        '',
-        'Tool use rule for `updateItinerary`:',
-        "Call it ONLY when the user's message NAMES specific places to add, remove, swap, or clear.",
-        'Examples that SHOULD trigger a call: "add Cubbon Park", "remove MTR", "swap Koshy\'s for Karavalli".',
-        'Examples that MUST NOT trigger a call: "plan a trip", "show me places", "suggest options", "what should I see", small talk, thanks.',
-        'When called, pass the COMPLETE new picked set (replace semantics) using only poiIds from the candidate list below.',
-        'Otherwise do not call the tool.',
-        '',
-        'Trip context so far:',
-        `- Destination: ${state.destination ?? 'not chosen'}`,
-        `- Dates: ${state.dates ? `${state.dates.start} → ${state.dates.end}` : 'not picked'}`,
-        `- Interests: ${state.interests.length ? state.interests.join(', ') : 'none stated'}`,
-        `- Weather: ${state.weather ? `${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)` : 'not looked up'}`,
-        '',
-        'Candidate places this turn:',
-        candidateList,
-        '',
-        'Currently picked places:',
-        pickedList,
-    ].join('\n');
-}
-
-// ----- Elicit logic (mechanical, intent-aware) ----------------------------------------
+// ----- Interest options (kept in sync with tools.ts INTEREST_VALUES) -----------------
 
 const INTEREST_OPTIONS = [
     { value: 'food', label: 'Food & restaurants' },
@@ -83,29 +19,100 @@ const INTEREST_OPTIONS = [
     { value: 'culture', label: 'Arts & culture' },
 ];
 
-function requiredSlots(
-    intent: AgentStateType['intent'],
-): Array<'destination' | 'dates' | 'interests'> {
-    switch (intent) {
-        case 'researching':
-            return ['destination'];
-        case 'tripPreparation':
-            return ['destination', 'dates'];
-        case 'itineraryPlanning':
-            return ['destination', 'dates', 'interests'];
-        case 'general':
-            return [];
-    }
+// ----- Slot derivation from tool-call args ------------------------------------------
+
+interface DerivedSlots {
+    destination?: City;
+    dates?: { start: string; end: string };
+    interests: string[];
 }
 
-function buildElicit(state: AgentStateType): ElicitSpec | undefined {
-    // User explicitly declined the prior elicit this turn — don't re-ask.
-    if (state.userDeclinedElicit) return undefined;
-    const needed = requiredSlots(state.intent);
+function extractSlotsFromToolCalls(toolCalls: ToolCallRecord[], state: AgentStateType): DerivedSlots {
+    // Start from current state, override with this turn's tool-call args.
+    const slots: DerivedSlots = {
+        destination: state.destination,
+        dates: state.dates,
+        interests: state.interests,
+    };
+
+    for (const toolCall of toolCalls) {
+        const args = toolCall.args ?? {};
+        if (toolCall.name === 'searchPois') {
+            if (typeof args.city === 'string') slots.destination = args.city as City;
+            if (Array.isArray(args.interests) && args.interests.length) {
+                slots.interests = args.interests as string[];
+            }
+        }
+        if (toolCall.name === 'getWeather') {
+            if (typeof args.city === 'string') slots.destination = args.city as City;
+            const startDate = typeof args.startDate === 'string' ? args.startDate : undefined;
+            const endDate = typeof args.endDate === 'string' ? args.endDate : undefined;
+            if (startDate && endDate) slots.dates = { start: startDate, end: endDate };
+        }
+    }
+
+    return slots;
+}
+
+// ----- Rule-based elicit (no `intent` field; infer from which tools ran) ------------
+
+function fieldsToElicit(
+    toolCalls: ToolCallRecord[],
+    slots: DerivedSlots,
+    userMessage: string,
+): Array<'destination' | 'dates' | 'interests'> {
+    const calledSearch = toolCalls.some((toolCall) => toolCall.name === 'searchPois');
+    const calledWeather = toolCalls.some((toolCall) => toolCall.name === 'getWeather');
+
+    const missingDest = !slots.destination;
+    const missingDates = !slots.dates;
+    const missingInterests = !slots.interests.length;
+
+    const fields: Array<'destination' | 'dates' | 'interests'> = [];
+
+    // No tool calls at all + missing destination → user wants to plan but hasn't said where.
+    // Treat as full planning intent and ask for everything.
+    if (!calledSearch && !calledWeather && missingDest) {
+        // Light heuristic: if the user used a planning verb, also ask for dates + interests.
+        const planningVerbs = /\b(plan|trip|itinerary|visit|travel|go to|going to)\b/i;
+        if (planningVerbs.test(userMessage)) {
+            fields.push('destination');
+            if (missingDates) fields.push('dates');
+            if (missingInterests) fields.push('interests');
+        } else {
+            fields.push('destination');
+        }
+        return fields;
+    }
+
+    // Tool calls happened → narrow elicit to what those tools imply.
+    if (calledSearch && calledWeather) {
+        // Likely full planning — ask for anything still missing.
+        if (missingDest) fields.push('destination');
+        if (missingDates) fields.push('dates');
+        if (missingInterests) fields.push('interests');
+    } else if (calledSearch) {
+        // Researching — only destination + interests matter.
+        if (missingDest) fields.push('destination');
+        if (missingInterests) fields.push('interests');
+    } else if (calledWeather) {
+        // Trip prep — destination + dates.
+        if (missingDest) fields.push('destination');
+        if (missingDates) fields.push('dates');
+    }
+    return fields;
+}
+
+function buildElicit(
+    fields: Array<'destination' | 'dates' | 'interests'>,
+    slots: DerivedSlots,
+    preferences: AgentStateType['preferences'],
+): ElicitSpec | undefined {
+    if (!fields.length) return undefined;
     const properties: Record<string, ElicitPrimitiveSchema> = {};
     const required: string[] = [];
 
-    if (needed.includes('destination') && !state.destination) {
+    if (fields.includes('destination')) {
         properties.destination = {
             type: 'string',
             title: 'Where to?',
@@ -116,8 +123,8 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
         };
         required.push('destination');
     }
-    if (needed.includes('dates') && !state.dates) {
-        // MCP forbids nested objects in requestedSchema, so date range is two flat fields.
+    if (fields.includes('dates')) {
+        // MCP forbids nested objects in requestedSchema — flat fields.
         properties.startDate = {
             type: 'string',
             title: 'Start date',
@@ -130,18 +137,20 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
             format: 'date',
         };
     }
-    if (needed.includes('interests') && !state.interests.length) {
-        const memInterests = state.preferences?.recurringInterests ?? [];
+    if (fields.includes('interests')) {
+        const memInterests = preferences?.recurringInterests ?? [];
         properties.interests = {
             type: 'array',
             title: 'What are you in the mood for?',
             items: {
-                anyOf: INTEREST_OPTIONS.map((option) => ({ const: option.value, title: option.label })),
+                anyOf: INTEREST_OPTIONS.map((option) => ({
+                    const: option.value,
+                    title: option.label,
+                })),
             },
             ...(memInterests.length > 0 ? { default: memInterests } : {}),
         };
     }
-    if (!Object.keys(properties).length) return undefined;
     return {
         message: 'A few quick details so I can plan your day:',
         requestedSchema: {
@@ -152,85 +161,115 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
     };
 }
 
-// ----- The node -----------------------------------------------------------------------
+// ----- Small LLM call for suggestedActions ------------------------------------------
+
+const SuggestionsOutput = z.object({
+    suggestedActions: z
+        .array(z.string())
+        .describe(
+            "Short follow-up chips the USER might tap to send as their next message — written in the user's first-person voice. " +
+                'Each chip should read like something the user would naturally type or click. ' +
+                'Good examples: "What should I pack?", "Make it more relaxed", "Save this trip", "Show me only cultural spots", "Plan a 3-day itinerary". ' +
+                'Bad examples (do NOT use these patterns): "Share your interests", "Request places", "Pick a destination", "Get packing tips" — these are imperatives directed at the user, not user-voiced prompts. ' +
+                'Return an empty array if no natural next step exists.',
+        ),
+});
+
+function buildSuggestionsPrompt(
+    slots: DerivedSlots,
+    state: AgentStateType,
+    response: string,
+): string {
+    const ctx: string[] = [];
+    if (slots.destination)
+        ctx.push(`Destination: ${CITY_DISPLAY_NAMES[slots.destination] ?? slots.destination}`);
+    if (slots.dates) ctx.push(`Dates: ${slots.dates.start} → ${slots.dates.end}`);
+    if (slots.interests.length) ctx.push(`Interests: ${slots.interests.join(', ')}`);
+    if (state.weather)
+        ctx.push(
+            `Weather: ${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)`,
+        );
+    ctx.push(`Candidates this turn: ${state.pois.length}`);
+    ctx.push(`Currently picked: ${state.pickedPois.length}`);
+
+    return [
+        'Generate 2-4 short follow-up chips a user might tap next.',
+        'Write them in the user\'s first-person voice — what THEY would type or click.',
+        'Build on the agent reply just shown — do not contradict it or repeat info already given.',
+        'Return an empty array if no natural follow-up exists.',
+        '',
+        'Trip context:',
+        ...ctx.map((line) => `  - ${line}`),
+        '',
+        `Agent reply: ${response || '(no reply)'}`,
+    ].join('\n');
+}
+
+// ----- The node ----------------------------------------------------------------------
 
 export async function followUp(state: AgentStateType): Promise<Partial<AgentStateType>> {
     console.log(
-        `\n💬 [follow-up] entry — intent=${state.intent} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} ack=${state.response ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
+        `\n💬 [follow-up] entry — toolCalls=${state.toolCalls.length} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
     );
 
-    const elicit = buildElicit(state);
+    // 1. Extract slots from TravelAgent's tool-call args.
+    const slots = extractSlotsFromToolCalls(state.toolCalls, state);
     console.log(
-        `[follow-up] elicit — ${elicit ? `fields=[${Object.keys(elicit.requestedSchema.properties).join(',')}]` : 'none'}`,
+        `[follow-up] slots — destination=${slots.destination ?? '—'} dates=${slots.dates ? `${slots.dates.start}→${slots.dates.end}` : '—'} interests=[${slots.interests.join(',')}]`,
     );
 
-    // Conversation history was pre-fetched outside the graph — read from state.
-    const priorMessages: BaseMessage[] = state.conversationHistory.map((message) =>
-        message.role === 'user' ? new HumanMessage(message.content) : new AIMessage(message.content),
-    );
-    console.log(`[follow-up] context — prior messages=${priorMessages.length}`);
-
-    const messages: BaseMessage[] = [
-        new SystemMessage(buildSystemPrompt(state)),
-        ...priorMessages,
-        new HumanMessage(state.userMessage),
-    ];
-    // if (state.response) {
-    //     messages.push(new AIMessage(state.response)); // TravelAgent's reply this turn
-    // }
-
-    // ----- Pass 1: bind the tool, run the LLM, let the tool do its work -----
-    let appliedPicks: POI[] | undefined;
-    const updateItineraryTool = makeUpdateItineraryTool(state, (picks) => {
-        appliedPicks = picks;
-    });
-
-    const toolModel = getChatModel().bindTools([updateItineraryTool]);
-    const toolResponse = await toolModel.invoke(messages);
-
-    const toolCalls = toolResponse.tool_calls ?? [];
-    const toolMessages: ToolMessage[] = [];
-    for (const tc of toolCalls) {
-        if (tc.name !== 'updateItinerary') continue;
-        const result = await updateItineraryTool.invoke(tc);
-        toolMessages.push(
-            new ToolMessage({
-                tool_call_id: tc.id ?? `${tc.name}-${Date.now()}`,
-                content: typeof result === 'string' ? result : JSON.stringify(result),
-            }),
+    // 2. Persist the working trip draft to Redis whenever we know the destination.
+    //    Idempotent — safe to call every turn.
+    if (slots.destination) {
+        await ensureDraft(state.userId, state.sessionId, {
+            city: slots.destination,
+            startDate: slots.dates?.start,
+            endDate: slots.dates?.end,
+            interests: slots.interests,
+        }).catch((err) =>
+            console.error('[follow-up] ensureDraft failed:', (err as Error).message),
         );
     }
 
-    // ----- Pass 2: structured response -----
-    const messagesForFinal: BaseMessage[] = toolMessages.length
-        ? [...messages, toolResponse, ...toolMessages]
-        : messages;
+    // 3. Decide if we need to elicit anything from the user.
+    let elicit: ElicitSpec | undefined;
+    if (!state.userDeclinedElicit) {
+        const fieldsNeeded = fieldsToElicit(state.toolCalls, slots, state.userMessage);
+        elicit = buildElicit(fieldsNeeded, slots, state.preferences);
+        if (elicit) {
+            console.log(`[follow-up] elicit — fields=[${fieldsNeeded.join(',')}]`);
+        }
+    }
 
-    const structuredModel = getChatModel().withStructuredOutput(FollowUpOutput, {
-        name: 'follow_up',
+    // 4. One small LLM call for suggestedActions (always — the chips help the
+    //    user even when an elicit is also on screen).
+    const suggestionsModel = getChatModel().withStructuredOutput(SuggestionsOutput, {
+        name: 'suggested_actions',
     });
-    const out = await structuredModel.invoke(messagesForFinal);
-    console.log(`[follow-up] LLM — suggestedActions=[${out.suggestedActions.join(',')}]`);
-    console.log(
-        `[follow-up] reply: "${out.textResponse.slice(0, 120)}${out.textResponse.length > 120 ? '…' : ''}"`,
-    );
+    const out = await suggestionsModel
+        .invoke([
+            new SystemMessage(buildSuggestionsPrompt(slots, state, state.response ?? '')),
+            new HumanMessage(state.userMessage),
+        ])
+        .catch((err) => {
+            console.warn('[follow-up] suggestions failed:', (err as Error).message);
+            return { suggestedActions: [] as string[] };
+        });
+    console.log(`[follow-up] suggestedActions=[${out.suggestedActions.join(',')}]`);
 
-    // Persist this turn to AMS working memory (fire-and-forget).
-    const turnMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-        { role: 'user', content: state.userMessage },
-    ];
-    if (state.response) turnMessages.push({ role: 'assistant', content: state.response });
-    turnMessages.push({ role: 'assistant', content: out.textResponse });
+    // 5. Persist this turn to AMS working memory (fire-and-forget).
+    if (state.response) {
+        appendTurn(state.sessionId, state.userId, [
+            { role: 'user', content: state.userMessage },
+            { role: 'assistant', content: state.response },
+        ]).catch((err) => console.error('[follow-up] appendTurn failed:', (err as Error).message));
+    }
 
-    appendTurn(state.sessionId, state.userId, turnMessages).catch((err) =>
-        console.error('[appendTurn] failed:', (err as Error).message),
-    );
-
-    const patch: Partial<AgentStateType> = {
-        response: out.textResponse,
+    return {
+        destination: slots.destination,
+        dates: slots.dates,
+        interests: slots.interests,
         suggestedActions: out.suggestedActions,
         elicit,
     };
-    if (appliedPicks) patch.pickedPois = appliedPicks;
-    return patch;
 }

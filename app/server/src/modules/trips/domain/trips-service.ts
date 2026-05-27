@@ -1,4 +1,5 @@
 import type { POI, City } from '#modules/places/types.js';
+import { getPoiById } from '#modules/places/domain/places-service.js';
 import { saveLongTermMemory, deleteWorkingMemory } from '#modules/user/domain/user-service.js';
 import { clearToken as clearGoogleToken } from '#modules/calendar/domain/google-oauth-service.js';
 import type { PastTrip } from '../types.js';
@@ -43,14 +44,25 @@ export async function commitPicks(
     const priorById = new Map(priorPicks.map((poi) => [poi.id, poi]));
     const enriched: POI[] = [];
     for (const pick of minimal) {
+        // 1. Check this turn's candidates (cheapest — already in memory).
         const fromCurrent = currentCandidates.find((poi) => poi.id === pick.poiId);
         if (fromCurrent) {
             enriched.push(fromCurrent);
             continue;
         }
+        // 2. Check prior picks (carried in from client state).
         const prior = priorById.get(pick.poiId);
         if (prior) {
             enriched.push(prior);
+            continue;
+        }
+        // 3. Fall back to Redis. Happens when the LLM names a place from a
+        //    previous turn's searchPois result but neither the candidates nor
+        //    the picks have it in-memory this turn. POIs are persistent in the
+        //    `pointsOfInterest:<id>` HASH from the seed-pois step.
+        const fromRedis = await getPoiById(pick.poiId);
+        if (fromRedis) {
+            enriched.push(fromRedis);
             continue;
         }
         console.warn(

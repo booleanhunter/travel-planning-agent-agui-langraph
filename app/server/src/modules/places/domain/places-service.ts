@@ -3,6 +3,7 @@ import {
     searchPois as repoSearchPois,
     upsertPoi as repoUpsertPoi,
     ensurePoiIndex as repoEnsurePoiIndex,
+    getPoiById as repoGetPoiById,
 } from '../data/places-repository.js';
 
 interface SearchOptions {
@@ -13,6 +14,10 @@ interface SearchOptions {
 
 export function searchPois(opts: SearchOptions): Promise<POI[]> {
     return repoSearchPois(opts);
+}
+
+export function getPoiById(id: string): Promise<POI | null> {
+    return repoGetPoiById(id);
 }
 
 export function upsertPoi(poi: POI, vector: Buffer): Promise<void> {
