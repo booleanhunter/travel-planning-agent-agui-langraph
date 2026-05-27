@@ -20,4 +20,11 @@ export const config = {
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     agentMemoryServerUrl: process.env.AGENT_MEMORY_SERVER_URL ?? 'http://localhost:8000',
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+    googleOauth: {
+        clientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
+        clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '',
+        redirectUri:
+            process.env.GOOGLE_OAUTH_REDIRECT_URI ?? 'http://localhost:3000/oauth/google/callback',
+    },
+    publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000',
 };

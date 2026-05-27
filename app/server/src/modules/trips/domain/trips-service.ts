@@ -1,5 +1,6 @@
 import type { POI, City } from '#modules/places/types.js';
 import { saveLongTermMemory, deleteWorkingMemory } from '#modules/user/domain/user-service.js';
+import { clearToken as clearGoogleToken } from '#modules/calendar/domain/google-oauth-service.js';
 import type { PastTrip } from '../types.js';
 import {
     ensureTripDraft as repoEnsureTripDraft,
@@ -127,6 +128,7 @@ export async function archiveTripToMemory(userId: string, trip: PastTrip): Promi
  * Reset the user's working planning slot:
  *   - delete the trip-store HASH for this session (working trip is gone)
  *   - wipe AMS working memory for the session (conversation cleared)
+ *   - clear the Google OAuth token (next saveTripToCalendar re-authorizes)
  *
  * Past trips (status: completed) are NOT touched — they live under different
  * tripIds and remain in trip-store + AMS long-term.
@@ -136,6 +138,9 @@ export async function resetWorkingTrip(userId: string, sessionId: string): Promi
         repoDeleteTrip(userId, sessionId),
         deleteWorkingMemory(sessionId).catch((err) =>
             console.error('[trips-service] deleteWorkingMemory failed:', (err as Error).message),
+        ),
+        clearGoogleToken(userId).catch((err) =>
+            console.error('[trips-service] clearGoogleToken failed:', (err as Error).message),
         ),
     ]);
 }

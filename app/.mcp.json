@@ -1,8 +1,8 @@
 {
-    "mcpServers": {
-        "trip-itinerary-builder": {
-            "type": "http",
-            "url": "http://localhost:3000/mcp"
-        }
+  "mcpServers": {
+    "trip-itinerary-planner": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp"
     }
+  }
 }
