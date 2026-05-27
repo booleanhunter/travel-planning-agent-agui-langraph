@@ -37,19 +37,28 @@ function extractSlotsFromToolCalls(toolCalls: ToolCallRecord[], state: AgentStat
 
     for (const toolCall of toolCalls) {
         const args = toolCall.args ?? {};
-        if (toolCall.name === 'searchPois') {
+        // Destination flows from any tool that takes a city arg —
+        // searchPois (discovery), getPoiDetails (lookup), getWeather (climate).
+        if (
+            toolCall.name === 'searchPois' ||
+            toolCall.name === 'getPoiDetails' ||
+            toolCall.name === 'getWeather'
+        ) {
             if (typeof args.city === 'string') slots.destination = args.city as City;
+        }
+        // Interests come only from searchPois (where the LLM passes the
+        // canonical tag list).
+        if (toolCall.name === 'searchPois') {
             if (Array.isArray(args.interests) && args.interests.length) {
                 slots.interests = args.interests as string[];
             }
         }
-        if (toolCall.name === 'getWeather' || toolCall.name === 'saveTripToCalendar') {
-            if (typeof args.city === 'string') slots.destination = args.city as City;
+        // Dates come only from getWeather (the only tool that takes them).
+        if (toolCall.name === 'getWeather') {
             const startDate = typeof args.startDate === 'string' ? args.startDate : undefined;
             const endDate = typeof args.endDate === 'string' ? args.endDate : undefined;
             if (startDate && endDate) slots.dates = { start: startDate, end: endDate };
         }
-
     }
 
     return slots;
@@ -62,8 +71,26 @@ function fieldsToElicit(
     slots: DerivedSlots,
     userMessage: string,
 ): Array<'destination' | 'dates' | 'interests'> {
+    // Two tool categories drive the decision:
+    //   - DISCOVERY (searchPois, getWeather): user is gathering info → may still
+    //     be missing slots the elicit could fill.
+    //   - ACTION (getPoiDetails, updateItinerary, saveTripToCalendar): user is
+    //     past the info-gathering phase — they named places, committed picks,
+    //     or saved the trip. Don't ask "Where to?" after that.
     const calledSearch = toolCalls.some((toolCall) => toolCall.name === 'searchPois');
     const calledWeather = toolCalls.some((toolCall) => toolCall.name === 'getWeather');
+    const calledAction = toolCalls.some(
+        (toolCall) =>
+            toolCall.name === 'getPoiDetails' ||
+            toolCall.name === 'updateItinerary' ||
+            toolCall.name === 'saveTripToCalendar',
+    );
+
+    // Short-circuit: only action tools fired this turn → user is committing,
+    // not exploring. No elicit, no matter what's missing from the slots.
+    if (calledAction && !calledSearch && !calledWeather) {
+        return [];
+    }
 
     const missingDest = !slots.destination;
     const missingDates = !slots.dates;
@@ -71,9 +98,9 @@ function fieldsToElicit(
 
     const fields: Array<'destination' | 'dates' | 'interests'> = [];
 
-    // No tool calls at all + missing destination → user wants to plan but hasn't said where.
-    // Treat as full planning intent and ask for everything.
-    if (!calledSearch && !calledWeather && missingDest) {
+    // No tool calls at all + missing destination → user wants to plan but
+    // hasn't said where. Treat as full planning intent and ask for everything.
+    if (!calledSearch && !calledWeather && !calledAction && missingDest) {
         // Light heuristic: if the user used a planning verb, also ask for dates + interests.
         const planningVerbs = /\b(plan|trip|itinerary|visit|travel|go to|going to)\b/i;
         if (planningVerbs.test(userMessage)) {
@@ -86,7 +113,7 @@ function fieldsToElicit(
         return fields;
     }
 
-    // Tool calls happened → narrow elicit to what those tools imply.
+    // Discovery tool calls happened → narrow elicit to what those tools imply.
     if (calledSearch && calledWeather) {
         // Likely full planning — ask for anything still missing.
         if (missingDest) fields.push('destination');
