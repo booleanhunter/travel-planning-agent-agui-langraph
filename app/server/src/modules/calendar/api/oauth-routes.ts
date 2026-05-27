@@ -42,10 +42,29 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     try {
         await completeOAuthFlow(elicitationId, code);
+        // AG-UI path: this tab was opened by the React app via window.open;
+        // postMessage back to the opener so it can auto-resubmit the pending
+        // turn. MCP clients ignore the script (their browser tab has no
+        // opener) and rely on the server's in-process deferred instead.
+        const safeId = escapeHtml(elicitationId);
         res.send(
             html(
                 '<h1>✓ Signed in</h1>' +
-                    '<p>You can close this tab and return to your chat.</p>',
+                    '<p>You can close this tab and return to your chat.</p>' +
+                    '<script>' +
+                    `(function(){
+                        try {
+                            if (window.opener) {
+                                window.opener.postMessage(
+                                    { type: 'oauth-complete', elicitationId: '${safeId}' },
+                                    window.location.origin
+                                );
+                            }
+                        } catch (err) {
+                            console.warn('postMessage to opener failed:', err);
+                        }
+                    })();` +
+                    '</script>',
             ),
         );
     } catch (err) {

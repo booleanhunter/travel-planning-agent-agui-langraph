@@ -27,7 +27,11 @@ async function main(): Promise<void> {
     console.log('response:', out1.response?.slice(0, 120));
     console.log(
         'elicit fields:',
-        out1.elicit ? Object.keys(out1.elicit.requestedSchema.properties) : undefined,
+        out1.elicit && out1.elicit.mode === 'form'
+            ? Object.keys(out1.elicit.requestedSchema.properties)
+            : out1.elicit?.mode === 'url'
+              ? `URL: ${out1.elicit.url}`
+              : undefined,
     );
 
     console.log('\n=== Test 2: planning, all slots present ===');

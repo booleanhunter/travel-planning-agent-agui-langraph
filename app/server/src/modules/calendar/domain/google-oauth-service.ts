@@ -24,11 +24,22 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
 // ----- Deferred coordination -----------------------------------------------
+//
+// Two consumer shapes:
+//   - AG-UI: graph tool body fires the URL elicit, returns, response ends.
+//     There's nothing awaiting in-process — `resolve`/`reject` are unset.
+//     The callback just needs the `userId` to save the token against.
+//   - MCP: planTrip's resume loop calls `awaitOAuthCompletion` to block on
+//     the OAuth flow inside the tool call. `resolve`/`reject` are attached
+//     so the callback unblocks the loop.
+//
+// Either way, the pending entry maps `elicitationId → userId` for the
+// callback's token-save step.
 
 interface PendingFlow {
     userId: string;
-    resolve: (token: GoogleToken) => void;
-    reject: (err: Error) => void;
+    resolve?: (token: GoogleToken) => void;
+    reject?: (err: Error) => void;
     timer: NodeJS.Timeout;
 }
 
@@ -37,28 +48,51 @@ const pending = new Map<string, PendingFlow>();
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
 
 /**
- * Tool side: register a wait-for-OAuth-completion. Returns a promise that
- * resolves when /oauth/google/callback exchanges the code; rejects on timeout
- * or explicit cancel.
+ * Register a pending OAuth flow without attaching an awaitable. Used by the
+ * graph tool body — emit URL elicit + register so the callback can look up
+ * the userId, then return. No in-process await.
+ *
+ * Idempotent for a given elicitationId: if one already exists (e.g. MCP's
+ * awaitOAuthCompletion got there first), this is a no-op.
+ */
+export function registerPendingFlow(elicitationId: string, userId: string): void {
+    if (pending.has(elicitationId)) return;
+    const timer = setTimeout(() => {
+        const flow = pending.get(elicitationId);
+        pending.delete(elicitationId);
+        flow?.reject?.(new Error('OAuth flow timed out — user did not complete sign-in in time.'));
+    }, PENDING_TIMEOUT_MS);
+    pending.set(elicitationId, { userId, timer });
+}
+
+/**
+ * MCP-side: register (if not already) and attach a deferred. Returns a
+ * promise that resolves when /oauth/google/callback exchanges the code;
+ * rejects on timeout or cancel.
  */
 export function awaitOAuthCompletion(elicitationId: string, userId: string): Promise<GoogleToken> {
     return new Promise<GoogleToken>((resolve, reject) => {
-        const timer = setTimeout(() => {
-            pending.delete(elicitationId);
-            reject(new Error('OAuth flow timed out — user did not complete sign-in in time.'));
-        }, PENDING_TIMEOUT_MS);
-
-        pending.set(elicitationId, { userId, resolve, reject, timer });
+        const existing = pending.get(elicitationId);
+        if (existing) {
+            existing.resolve = resolve;
+            existing.reject = reject;
+        } else {
+            const timer = setTimeout(() => {
+                pending.delete(elicitationId);
+                reject(new Error('OAuth flow timed out — user did not complete sign-in in time.'));
+            }, PENDING_TIMEOUT_MS);
+            pending.set(elicitationId, { userId, resolve, reject, timer });
+        }
     });
 }
 
-/** Tool side: cancel a pending wait (e.g. user clicked cancel on the URL prompt). */
+/** Cancel a pending flow (e.g. user clicked Cancel on the URL elicit). */
 export function cancelOAuthCompletion(elicitationId: string): void {
-    const p = pending.get(elicitationId);
-    if (!p) return;
-    clearTimeout(p.timer);
+    const flow = pending.get(elicitationId);
+    if (!flow) return;
+    clearTimeout(flow.timer);
     pending.delete(elicitationId);
-    p.reject(new Error('OAuth flow cancelled by user.'));
+    flow.reject?.(new Error('OAuth flow cancelled by user.'));
 }
 
 // ----- URL building --------------------------------------------------------
@@ -110,7 +144,7 @@ export async function completeOAuthFlow(elicitationId: string, code: string): Pr
         const err = new Error(`Google token exchange failed (${res.status}): ${body}`);
         clearTimeout(flow.timer);
         pending.delete(elicitationId);
-        flow.reject(err);
+        flow.reject?.(err);
         throw err;
     }
 
@@ -131,7 +165,7 @@ export async function completeOAuthFlow(elicitationId: string, code: string): Pr
     await saveToken(flow.userId, token);
     clearTimeout(flow.timer);
     pending.delete(elicitationId);
-    flow.resolve(token);
+    flow.resolve?.(token); // MCP path attached one; AG-UI path didn't.
 
     return flow.userId;
 }

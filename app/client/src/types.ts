@@ -120,7 +120,9 @@ export type ElicitPrimitiveSchema =
     | ElicitBooleanSchema
     | ElicitArrayEnumSchema;
 
-export interface ElicitSpec {
+/** Form-mode elicit — chip card with JSON-Schema-driven inputs. */
+export interface FormElicitSpec {
+    mode: 'form';
     message: string;
     requestedSchema: {
         type: 'object';
@@ -128,6 +130,20 @@ export interface ElicitSpec {
         required?: string[];
     };
 }
+
+/**
+ * URL-mode elicit — opens an external URL (e.g. OAuth consent). The OAuth
+ * callback page postMessages back to `window.opener` with the matching
+ * elicitationId; the app then auto-resubmits the original turn.
+ */
+export interface URLElicitSpec {
+    mode: 'url';
+    message: string;
+    url: string;
+    elicitationId: string;
+}
+
+export type ElicitSpec = FormElicitSpec | URLElicitSpec;
 
 export interface UserPreferences {
     budget?: 'low' | 'mid' | 'high';

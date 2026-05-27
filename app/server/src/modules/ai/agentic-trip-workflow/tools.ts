@@ -1,11 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
-import { commitPicks } from '#modules/trips/domain/trips-service.js';
+import { config } from '#config';
+import { commitPicks, getTrip } from '#modules/trips/domain/trips-service.js';
 import { searchPois } from '#modules/places/domain/places-service.js';
 import { getWeather } from '#modules/weather/domain/weather-service.js';
 import { CitySchema, type POI, type City } from '#modules/places/types.js';
 import type { Weather } from '#modules/weather/types.js';
+import {
+    getValidToken,
+    registerPendingFlow,
+} from '#modules/calendar/domain/google-oauth-service.js';
+import { createEventForTrip } from '#modules/calendar/domain/calendar-service.js';
 import type { AgentStateType } from './state.js';
+import type { URLElicitSpec } from './types.js';
 
 /**
  * Build the `updateItinerary` tool. The closure captures `state` so the LLM
@@ -77,7 +85,7 @@ export function makeSearchPoisTool(onApplied: (pois: POI[]) => void) {
             onApplied(pois);
             return {
                 count: pois.length,
-                places: pois.map((poi) => ({ id: poi.id, name: poi.name, category: poi.category })),
+                places: pois.map((poi) => ({ id: poi.id, name: poi.name, category: poi.category, description: poi.description, rating: poi.rating })),
             };
         },
         {
@@ -195,6 +203,117 @@ export function makeGetWeatherTool(onApplied: (weather: Weather) => void) {
                     .string()
                     .optional()
                     .describe('Optional ISO date — last day of the trip.'),
+            }),
+        },
+    );
+}
+
+/**
+ * Build the `saveTripToCalendar` tool. The agent calls this when the user
+ * wants to export their trip to Google Calendar.
+ *
+ * If we have a valid cached Google token, the tool creates the calendar
+ * event directly and returns success. Otherwise it requests URL-mode
+ * elicitation: the tool body builds an OAuth start URL with a fresh
+ * elicitationId, hands the elicit spec to `onElicitNeeded` (which the
+ * calling node uses to set `state.elicit`), and returns `needsAuth: true`.
+ *
+ * The actual wait-for-OAuth happens in the transport layer:
+ *   - MCP: `planTrip`'s elicit-resume loop calls `awaitOAuthCompletion`
+ *     against the in-process deferred resolved by `/oauth/google/callback`.
+ *   - AG-UI: the React app opens the URL in a new tab and listens for a
+ *     `postMessage` from the OAuth callback page, then auto-resubmits the
+ *     same userMessage so the tool runs again with the now-cached token.
+ *
+ * The tool body itself never blocks waiting for OAuth — both transports
+ * handle the wait their own way.
+ */
+export function makeSaveTripToCalendarTool(
+    state: AgentStateType,
+    onElicitNeeded: (elicit: URLElicitSpec) => void,
+) {
+    return tool(
+        async ({ tripId }: { tripId: string }) => {
+            console.log(
+                `🔧 [tools] saveTripToCalendar — user=${state.userId} tripId=${tripId}`,
+            );
+            const trip = await getTrip(state.userId, tripId);
+            if (!trip) {
+                return {
+                    saved: false,
+                    error: `No trip found with id "${tripId}" for user ${state.userId}.`,
+                };
+            }
+            if (!trip.dates) {
+                return {
+                    saved: false,
+                    error: 'This trip has no dates set — cannot create a calendar event.',
+                };
+            }
+
+            // 1. Already have a valid token? Create directly.
+            const token = await getValidToken(state.userId);
+            if (token) {
+                try {
+                    const event = await createEventForTrip(token.accessToken, trip);
+                    console.log(
+                        `🔧 [tools] saveTripToCalendar — created ${event.id} for ${state.userId}/${trip.tripId}`,
+                    );
+                    return {
+                        saved: true,
+                        eventLink: event.htmlLink,
+                        city: trip.city,
+                        dates: trip.dates,
+                    };
+                } catch (err) {
+                    return {
+                        saved: false,
+                        error: `Google Calendar API failed: ${(err as Error).message}`,
+                    };
+                }
+            }
+
+            // 2. No token — signal URL-mode elicit via the host node.
+            //    The graph tool body does NOT await; the transport layer
+            //    handles the wait-for-OAuth + retry.
+            const elicitationId = randomUUID();
+            const startUrl = `${config.publicBaseUrl}/oauth/google/start?elicitationId=${elicitationId}`;
+            // Register the pending flow so the OAuth callback knows which
+            // userId to save the token against. AG-UI doesn't await; MCP's
+            // planTrip resume loop attaches a deferred via awaitOAuthCompletion.
+            registerPendingFlow(elicitationId, state.userId);
+            onElicitNeeded({
+                mode: 'url',
+                url: startUrl,
+                elicitationId,
+                message:
+                    `To save "Trip to ${trip.city}" to your Google Calendar, ` +
+                    'sign in with Google to grant calendar permission.',
+            });
+            return {
+                saved: false,
+                needsAuth: true,
+                message:
+                    'I need permission to add events to your Google Calendar. ' +
+                    'A sign-in prompt is now open.',
+            };
+        },
+        {
+            name: 'saveTripToCalendar',
+            description:
+                'Save a trip to the user\'s Google Calendar as an all-day event. ' +
+                'Call this when the user asks to save their trip / add it to their calendar. ' +
+                'Pass the tripId — for the current planning session use the user\'s sessionId (typically "newSessionId"); ' +
+                'for past trips use the seeded id (e.g. "seed-ashwin-bangalore"). ' +
+                'If we have no Google access token cached, the tool will request OAuth via URL-mode elicit; ' +
+                'in that case it returns { saved: false, needsAuth: true } and the user has to complete the ' +
+                'sign-in flow before retrying.',
+            schema: z.object({
+                tripId: z
+                    .string()
+                    .describe(
+                        'The trip to save. For the current session, this is the user\'s sessionId.',
+                    ),
             }),
         },
     );

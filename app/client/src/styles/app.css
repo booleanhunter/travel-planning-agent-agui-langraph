@@ -605,6 +605,28 @@
     height: 100%;
 }
 
+/* Custom route markers. Three roles: S (start), E (end), N (numbered middle).
+   Background colors come from inline style on the DivIcon HTML; the badge
+   styling lives here so weight/shadow/font are uniform. */
+.route-marker {
+    background: transparent !important;
+    border: none !important;
+}
+.route-marker-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    line-height: 1;
+}
+
 /* ---------- Memory drawer ---------- */
 
 .drawer-backdrop {
