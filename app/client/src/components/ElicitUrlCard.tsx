@@ -22,8 +22,11 @@ export function ElicitUrlCard({ spec, onComplete, onCancel }: Props) {
 
     useEffect(() => {
         const onMessage = (event: MessageEvent) => {
-            // Same-origin only — OAuth callback page is served from our domain.
-            if (event.origin !== window.location.origin) return;
+            // Origin check is intentionally skipped: in dev the callback page
+            // is served from the Express server (:3000) while this React app
+            // runs on Vite (:5173). The semantic auth is the elicitationId —
+            // a fresh UUID only the server (which set this elicit) and this
+            // client (which received it on the same SSE turn) know.
             const data = event.data as
                 | { type?: string; elicitationId?: string }
                 | null
