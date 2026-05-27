@@ -10,11 +10,13 @@ import type { POI } from '#modules/places/types.js';
 import type { Weather } from '#modules/weather/types.js';
 import { CITY_DISPLAY_NAMES } from '#modules/places/types.js';
 import type { AgentStateType, ToolCallRecord } from '../state.js';
+import type { ElicitSpec, URLElicitSpec } from '../types.js';
 import {
     makeSearchPoisTool,
     makeGetPoiDetailsTool,
     makeGetWeatherTool,
     makeUpdateItineraryTool,
+    makeSaveTripToCalendarTool,
 } from '../tools.js';
 
 // ----- System prompt -----------------------------------------------------------
@@ -28,6 +30,7 @@ const SYSTEM_PROMPT = (today: string, state: AgentStateType) => {
         '- **getPoiDetails** — LOOKUP. Find a SPECIFIC named place in a city and get its real `id`. Use BEFORE updateItinerary whenever the user names places to add — you need real ids, not names or numbers.',
         '- **getWeather** — climate data for a city + optional travel dates. Use for trip prep, packing questions, or to add weather context to planning.',
         '- **updateItinerary** — replace the user\'s picked-places set. Pass `pickedPois` as `[{poiId, name}]` using REAL ids from getPoiDetails (or from a prior searchPois result in the conversation). NEVER pass list indices like "1", "2" as ids — they are not real ids.',
+        '- **saveTripToCalendar** — save the user\'s current trip to their Google Calendar. Pass `tripId` (use the user\'s sessionId for the current planning session, or a seeded id for past trips). If the user hasn\'t signed in with Google yet, the tool returns `needsAuth: true` and our UI shows a sign-in prompt — do NOT re-call the tool when needsAuth is true; just compose a brief message telling the user to sign in.',
         '',
         'Decision rules:',
         '1. If the user needs places but you don\'t know the destination, do NOT call any tool — just ask them where they want to go in your response.',
@@ -36,8 +39,9 @@ const SYSTEM_PROMPT = (today: string, state: AgentStateType) => {
         '4. For research questions ("what is there to do in X"), call only searchPois.',
         '5. For weather/packing questions, call only getWeather.',
         '6. When the user NAMES specific places to add/swap/remove (e.g. "Set my picked places to: Spice Terrace, Olive Beach"): FIRST call getPoiDetails ONCE per place the USER NAMED (parallel is fine) to resolve each into a real `id`. THEN call updateItinerary with EXACTLY those ids — pass the full new picked set the user named, nothing more. DO NOT add other places from the conversation history that the user did NOT name in the current message. DO NOT look up places the user did not name.',
-        '7. For small talk or thanks, do not call any tool.',
-        '8. After tool results come back, compose a friendly, conversational reply summarizing what you found or did.',
+        '7. When the user asks to save their trip to Google Calendar (or similar): call saveTripToCalendar with the current sessionId as the tripId. If it returns `needsAuth: true`, do NOT call any more tools — compose a short reply that says "I need your Google sign-in to save the trip, please complete the prompt." If it returns `saved: true`, confirm with the event link.',
+        '8. For small talk or thanks, do not call any tool.',
+        '9. After tool results come back, compose a friendly, conversational reply summarizing what you found or did.',
         '',
         'Use prior conversation context (above) to fill in slots the user mentioned earlier — do not re-ask for information already in the chat.',
     ];
@@ -115,6 +119,10 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
     let collectedPois: POI[] = state.pois;
     let collectedWeather: Weather | undefined = state.weather;
     let collectedPicks: POI[] = state.pickedPois;
+    // saveTripToCalendar's tool body calls onElicitNeeded when there's no
+    // cached Google token, capturing the URL-mode elicit spec here so we
+    // can attach it to the returned state delta.
+    let capturedUrlElicit: URLElicitSpec | undefined;
 
     const tools = [
         makeSearchPoisTool((pois) => {
@@ -126,6 +134,9 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
         }),
         makeUpdateItineraryTool(state, (picks) => {
             collectedPicks = picks;
+        }),
+        makeSaveTripToCalendarTool(state, (elicit) => {
+            capturedUrlElicit = elicit;
         }),
     ];
 
@@ -238,5 +249,9 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
     if (searchedThisTurn) patch.pois = collectedPois;
     if (weatherFetchedThisTurn) patch.weather = collectedWeather;
     if (itineraryUpdatedThisTurn) patch.pickedPois = collectedPicks;
+    // URL-mode elicit emitted by saveTripToCalendar — FollowUp will preserve
+    // this and not override with a rule-based form elicit (it checks for an
+    // existing url-mode elicit on state).
+    if (capturedUrlElicit) patch.elicit = capturedUrlElicit as ElicitSpec;
     return patch;
 }

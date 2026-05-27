@@ -3,6 +3,7 @@ import { useAgentStream } from './hooks/useAgentStream';
 import { PromptInput } from './components/PromptInput';
 import { ChatSidebar } from './components/ChatSidebar';
 import { ElicitChipCard } from './components/ElicitChipCard';
+import { ElicitUrlCard } from './components/ElicitUrlCard';
 import { PointOfInterestGrid } from './components/PointOfInterestGrid';
 import { PlanAccordion } from './components/PlanAccordion';
 import { LiveRouteMap } from './components/LiveRouteMap';
@@ -182,14 +183,35 @@ export function App() {
         [stream, userId],
     );
 
-    const elicitSlot = stream.elicit ? (
-        <ElicitChipCard
-            spec={stream.elicit}
-            onSubmit={submitElicit}
-            onDecline={declineElicit}
-            onCancel={cancelElicit}
-        />
-    ) : null;
+    /** Auto-resubmit the pending turn once OAuth completes. */
+    const handleOAuthComplete = useCallback(() => {
+        const pending = stream.pendingTurnMessage;
+        if (!pending) {
+            stream.clearElicit();
+            return;
+        }
+        stream.clearElicit();
+        stream.submitTurn({ userMessage: pending });
+    }, [stream]);
+
+    const elicitSlot = stream.elicit
+        ? stream.elicit.mode === 'url'
+            ? (
+                  <ElicitUrlCard
+                      spec={stream.elicit}
+                      onComplete={handleOAuthComplete}
+                      onCancel={cancelElicit}
+                  />
+              )
+            : (
+                  <ElicitChipCard
+                      spec={stream.elicit}
+                      onSubmit={submitElicit}
+                      onDecline={declineElicit}
+                      onCancel={cancelElicit}
+                  />
+              )
+        : null;
 
     const followupSlot = useMemo(() => {
         if (stream.running) {

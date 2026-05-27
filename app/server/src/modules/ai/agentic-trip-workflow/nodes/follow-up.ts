@@ -43,12 +43,13 @@ function extractSlotsFromToolCalls(toolCalls: ToolCallRecord[], state: AgentStat
                 slots.interests = args.interests as string[];
             }
         }
-        if (toolCall.name === 'getWeather') {
+        if (toolCall.name === 'getWeather' || toolCall.name === 'saveTripToCalendar') {
             if (typeof args.city === 'string') slots.destination = args.city as City;
             const startDate = typeof args.startDate === 'string' ? args.startDate : undefined;
             const endDate = typeof args.endDate === 'string' ? args.endDate : undefined;
             if (startDate && endDate) slots.dates = { start: startDate, end: endDate };
         }
+
     }
 
     return slots;
@@ -105,7 +106,6 @@ function fieldsToElicit(
 
 function buildElicit(
     fields: Array<'destination' | 'dates' | 'interests'>,
-    slots: DerivedSlots,
     preferences: AgentStateType['preferences'],
 ): ElicitSpec | undefined {
     if (!fields.length) return undefined;
@@ -152,6 +152,7 @@ function buildElicit(
         };
     }
     return {
+        mode: 'form',
         message: 'A few quick details so I can plan your day:',
         requestedSchema: {
             type: 'object',
@@ -232,13 +233,19 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     }
 
     // 3. Decide if we need to elicit anything from the user.
-    let elicit: ElicitSpec | undefined;
-    if (!state.userDeclinedElicit) {
+    //    If TravelAgent already set a URL-mode elicit (e.g. saveTripToCalendar
+    //    needs OAuth), keep that and don't override with a rule-based form
+    //    elicit. URL-mode takes priority because the user can't proceed
+    //    without that out-of-band flow.
+    let elicit: ElicitSpec | undefined = state.elicit;
+    if (!elicit && !state.userDeclinedElicit) {
         const fieldsNeeded = fieldsToElicit(state.toolCalls, slots, state.userMessage);
-        elicit = buildElicit(fieldsNeeded, slots, state.preferences);
+        elicit = buildElicit(fieldsNeeded, state.preferences);
         if (elicit) {
             console.log(`[follow-up] elicit — fields=[${fieldsNeeded.join(',')}]`);
         }
+    } else if (elicit?.mode === 'url') {
+        console.log(`[follow-up] keeping URL-mode elicit set by TravelAgent`);
     }
 
     // 4. One small LLM call for suggestedActions (always — the chips help the

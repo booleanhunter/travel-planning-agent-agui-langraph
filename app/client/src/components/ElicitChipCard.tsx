@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import type { ElicitPrimitiveSchema, ElicitSpec } from '../types';
+import type { ElicitPrimitiveSchema, FormElicitSpec } from '../types';
 
 interface Props {
-    spec: ElicitSpec;
+    spec: FormElicitSpec;
     /** action: accept — user submitted the form with values. */
     onSubmit: (values: Record<string, unknown>) => void;
     /** action: decline — user explicitly chose to skip; continue without these. */

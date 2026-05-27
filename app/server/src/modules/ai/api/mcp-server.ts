@@ -4,23 +4,18 @@
  * the caller picks how to expose it (HTTP, stdio, etc.).
  */
 
-import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type {
     ElicitRequestFormParams,
     ElicitRequestURLParams,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { config } from '#config';
 import { CitySchema, POISchema } from '#modules/places/types.js';
 import { WeatherSchema } from '#modules/weather/types.js';
-import { getTrip } from '#modules/trips/domain/trips-service.js';
 import {
     awaitOAuthCompletion,
     cancelOAuthCompletion,
-    getValidToken,
 } from '#modules/calendar/domain/google-oauth-service.js';
-import { createEventForTrip } from '#modules/calendar/domain/calendar-service.js';
 import { streamPlannerTurn } from '../agentic-trip-workflow/runtime.js';
 import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 
@@ -203,6 +198,80 @@ export function createMcpServer(): McpServer {
                     return buildToolResult(result);
                 }
 
+                // Two elicit modes — `form` (chip-card-equivalent) and `url`
+                // (OAuth flows). Different MCP elicit shapes; different
+                // resume semantics on accept.
+                if (result.elicit.mode === 'url') {
+                    // URL-mode: open the consent URL in the MCP client, then
+                    // wait out-of-band for /oauth/google/callback to resolve
+                    // the in-process deferred keyed by elicitationId.
+                    const { elicitationId, url, message } = result.elicit;
+                    const completionNotifier =
+                        server.server.createElicitationCompletionNotifier(elicitationId);
+                    const tokenPromise = awaitOAuthCompletion(elicitationId, USER_ID);
+
+                    const elicit: ElicitRequestURLParams = {
+                        mode: 'url',
+                        elicitationId,
+                        url,
+                        message,
+                    };
+                    console.log(
+                        `eliciting URL from client — session=${sessionId} url=${url}`,
+                    );
+                    const reply = await server.server.elicitInput(elicit);
+
+                    if (reply.action !== 'accept') {
+                        cancelOAuthCompletion(elicitationId);
+                        return {
+                            content: [
+                                {
+                                    type: 'text' as const,
+                                    text: 'Calendar save cancelled — Google sign-in was declined.',
+                                },
+                            ],
+                            structuredContent: emptyStructured(),
+                        };
+                    }
+
+                    // Wait for the OAuth callback to resolve.
+                    try {
+                        await tokenPromise;
+                    } catch (err) {
+                        return {
+                            content: [
+                                {
+                                    type: 'text' as const,
+                                    text: `OAuth flow failed: ${(err as Error).message}`,
+                                },
+                            ],
+                            structuredContent: emptyStructured(),
+                            isError: true,
+                        };
+                    }
+
+                    // Notify the client the URL-mode flow is done (close any
+                    // hanging consent dialog) — best-effort.
+                    await completionNotifier().catch((err) =>
+                        console.warn(
+                            '[planTrip] completionNotifier failed:',
+                            (err as Error).message,
+                        ),
+                    );
+
+                    // Re-enter the graph with the same userMessage; this time
+                    // saveTripToCalendar's getValidToken returns the cached
+                    // token and the tool creates the event.
+                    state = {
+                        ...result,
+                        elicit: undefined,
+                    };
+                    // userMessage stays the same — that's what triggered the
+                    // calendar tool in the first place.
+                    continue;
+                }
+
+                // Form-mode (the existing path).
                 // Prefer the agent's contextual `response` over the boilerplate elicit
                 // message — the LLM's reply already explains what's being asked.
                 const elicitParams: ElicitRequestFormParams = {
@@ -267,145 +336,11 @@ export function createMcpServer(): McpServer {
         },
     );
 
-    // ----- saveTripToCalendar — the URL-mode elicitation showcase ----------------
-    //
-    // Demonstrates MCP elicitation `mode: "url"` for an OAuth-style auth flow.
-    // If the user already has a Google token cached, we skip straight to creating
-    // the event; otherwise we ask the client to open accounts.google.com and wait
-    // out-of-band for our /oauth/google/callback to receive the code, exchange it
-    // for a token, and resolve our deferred.
-
-    server.registerTool(
-        'saveTripToCalendar',
-        {
-            title: 'Save a trip to Google Calendar',
-            description:
-                'Add a saved trip (from this user\'s trip history) to their Google Calendar as ' +
-                'an all-day event spanning the trip dates. If we don\'t have a Google access ' +
-                'token cached for this user, the tool will request one via MCP URL-mode ' +
-                'elicitation (the client will open accounts.google.com for the user to authorize).',
-            inputSchema: {
-                tripId: z
-                    .string()
-                    .describe(
-                        "Trip identifier — e.g. 'newSessionId' for the current planning slot, " +
-                            "or 'seed-ashwin-bangalore' for a past trip from the user's history.",
-                    ),
-            },
-        },
-        async ({ tripId }) => {
-            const userId = USER_ID;
-            const trip = await getTrip(userId, tripId);
-            if (!trip) {
-                return {
-                    content: [
-                        {
-                            type: 'text' as const,
-                            text: `No trip found with id "${tripId}" for user ${userId}.`,
-                        },
-                    ],
-                    isError: true,
-                };
-            }
-            if (!trip.dates) {
-                return {
-                    content: [
-                        {
-                            type: 'text' as const,
-                            text: 'This trip has no dates set — cannot create a calendar event.',
-                        },
-                    ],
-                    isError: true,
-                };
-            }
-
-            // 1. Already have a valid token? Use it directly.
-            let token = await getValidToken(userId);
-
-            // 2. No token → URL-mode elicit.
-            if (!token) {
-                const elicitationId = randomUUID();
-                const startUrl = `${config.publicBaseUrl}/oauth/google/start?elicitationId=${elicitationId}`;
-                const completionNotifier =
-                    server.server.createElicitationCompletionNotifier(elicitationId);
-
-                const tokenPromise = awaitOAuthCompletion(elicitationId, userId);
-
-                const elicit: ElicitRequestURLParams = {
-                    mode: 'url',
-                    elicitationId,
-                    url: startUrl,
-                    message:
-                        `To save "Trip to ${trip.city}" to your Google Calendar, ` +
-                        'I need permission to add events. Click below to sign in.',
-                };
-                const reply = await server.server.elicitInput(elicit);
-
-                if (reply.action !== 'accept') {
-                    cancelOAuthCompletion(elicitationId);
-                    return {
-                        content: [
-                            {
-                                type: 'text' as const,
-                                text: 'Calendar save cancelled — Google sign-in was declined.',
-                            },
-                        ],
-                    };
-                }
-
-                // Wait out-of-band for /oauth/google/callback to resolve.
-                try {
-                    token = await tokenPromise;
-                } catch (err) {
-                    return {
-                        content: [
-                            {
-                                type: 'text' as const,
-                                text: `Calendar save failed: ${(err as Error).message}`,
-                            },
-                        ],
-                        isError: true,
-                    };
-                }
-
-                // Notify the client that the URL-mode flow is done — best-effort.
-                await completionNotifier().catch((err) =>
-                    console.warn(
-                        '[saveTripToCalendar] completionNotifier failed:',
-                        (err as Error).message,
-                    ),
-                );
-            }
-
-            // 3. Token in hand — create the event.
-            try {
-                const event = await createEventForTrip(token.accessToken, trip);
-                console.log(
-                    `🔧 [tools] saveTripToCalendar — created ${event.id} for ${userId}/${trip.tripId}`,
-                );
-                return {
-                    content: [
-                        {
-                            type: 'text' as const,
-                            text:
-                                `✓ Added "Trip to ${trip.city}" (${trip.dates.start} → ${trip.dates.end}) ` +
-                                `to your Google Calendar.\n${event.htmlLink}`,
-                        },
-                    ],
-                };
-            } catch (err) {
-                return {
-                    content: [
-                        {
-                            type: 'text' as const,
-                            text: `Calendar API call failed: ${(err as Error).message}`,
-                        },
-                    ],
-                    isError: true,
-                };
-            }
-        },
-    );
+    // Note: there is no standalone `saveTripToCalendar` MCP tool anymore.
+    // The graph's `saveTripToCalendar` tool (bound in TravelAgent's ReAct
+    // loop) reaches the same capability via `planTrip` — the agent's LLM
+    // picks it when the user asks to save, the graph emits a URL-mode
+    // elicit, and the planTrip resume loop above handles the OAuth dance.
 
     return server;
 }

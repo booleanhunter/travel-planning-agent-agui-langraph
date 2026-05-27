@@ -59,7 +59,12 @@ export type ElicitPrimitiveSchema =
     | ElicitBooleanSchema
     | ElicitArrayEnumSchema;
 
-export interface ElicitSpec {
+/**
+ * Form-mode elicit — chip card. JSON-Schema fields rendered as inputs.
+ * Same shape MCP's spec uses for `ElicitRequestFormParams`.
+ */
+export interface FormElicitSpec {
+    mode: 'form';
     message: string;
     requestedSchema: {
         type: 'object';
@@ -67,3 +72,24 @@ export interface ElicitSpec {
         required?: string[];
     };
 }
+
+/**
+ * URL-mode elicit — opens an external URL (e.g. OAuth consent) and the
+ * client signals back when the out-of-band flow completes. Matches MCP's
+ * `ElicitRequestURLParams` shape.
+ *
+ * In AG-UI: the React app opens `url` in a new tab; the OAuth callback
+ * page posts a message to `window.opener` with the matching
+ * `elicitationId`; the React app then auto-resubmits the original turn.
+ *
+ * In MCP: the MCP client opens the URL natively; our server awaits the
+ * in-process deferred resolved by `/oauth/google/callback`.
+ */
+export interface URLElicitSpec {
+    mode: 'url';
+    message: string;
+    url: string;
+    elicitationId: string;
+}
+
+export type ElicitSpec = FormElicitSpec | URLElicitSpec;

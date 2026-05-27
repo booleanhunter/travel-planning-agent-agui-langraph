@@ -37,6 +37,12 @@ interface AgentStream {
     /** Cancel/dismiss the current elicit locally — no server call. */
     clearElicit: () => void;
     resetCanvas: () => void;
+    /**
+     * When the current elicit is URL-mode, this is the userMessage that
+     * triggered it. Used to auto-resubmit after the OAuth flow completes.
+     * Null when no URL-mode elicit is pending.
+     */
+    pendingTurnMessage: string | null;
 }
 
 /**
@@ -72,6 +78,10 @@ export function useAgentStream(): AgentStream & {
     const [error, setError] = useState<string | null>(null);
     const [conversation, setConversation] = useState<ConversationEntry[]>([]);
     const [pickedPois, setPickedPois] = useState<POI[]>([]);
+    const [pendingTurnMessage, setPendingTurnMessage] = useState<string | null>(null);
+    // Tracks the userMessage of the in-flight turn so we can capture it as
+    // the pendingTurnMessage if that turn ends up emitting a URL-mode elicit.
+    const inFlightMessageRef = useRef<string | null>(null);
     // Resolved slots from RouteIntent — carried forward to subsequent turns
     const [resolvedSlots, setResolvedSlots] = useState<{
         destination?: City;
@@ -86,7 +96,15 @@ export function useAgentStream(): AgentStream & {
     const applyDelta = useCallback((delta: Record<string, unknown>) => {
         if (delta.pois !== undefined) setPois(delta.pois as POI[]);
         if (delta.weather !== undefined) setWeather(delta.weather as Weather);
-        if (delta.elicit !== undefined) setElicit(delta.elicit as ElicitSpec);
+        if (delta.elicit !== undefined) {
+            const newElicit = delta.elicit as ElicitSpec | null;
+            setElicit(newElicit);
+            // Capture the in-flight userMessage when a URL-mode elicit arrives,
+            // so we can auto-resubmit after the OAuth callback completes.
+            if (newElicit?.mode === 'url' && inFlightMessageRef.current) {
+                setPendingTurnMessage(inFlightMessageRef.current);
+            }
+        }
         if (delta.response !== undefined) setResponse(delta.response as string);
         if (delta.suggestedActions !== undefined)
             setSuggestedActions(delta.suggestedActions as string[]);
@@ -104,7 +122,10 @@ export function useAgentStream(): AgentStream & {
         // associate the message with the current turnId.
     }, []);
 
-    const clearElicit = useCallback(() => setElicit(null), []);
+    const clearElicit = useCallback(() => {
+        setElicit(null);
+        setPendingTurnMessage(null);
+    }, []);
 
     const resetCanvas = useCallback(() => {
         setPois([]);
@@ -116,6 +137,7 @@ export function useAgentStream(): AgentStream & {
         setPickedPois([]);
         setError(null);
         setResolvedSlots({});
+        setPendingTurnMessage(null);
     }, []);
 
     const submitTurn = useCallback(
@@ -123,9 +145,14 @@ export function useAgentStream(): AgentStream & {
             const agent = agentRef.current;
             if (!agent) return;
 
+            // Track the in-flight message so applyDelta can capture it as the
+            // pendingTurnMessage if this turn returns a URL-mode elicit.
+            inFlightMessageRef.current = input.userMessage;
+
             setRunning(true);
             setError(null);
             setElicit(null);
+            setPendingTurnMessage(null);
 
             // Append user message — dots accumulate on this entry as the run progresses.
             setConversation((prev) => [
@@ -216,6 +243,7 @@ export function useAgentStream(): AgentStream & {
         submitTurn,
         clearElicit,
         resetCanvas,
+        pendingTurnMessage,
         userId,
         sessionId,
     };
