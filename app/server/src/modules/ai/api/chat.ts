@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { EventType } from '@ag-ui/core';
-import { graph, APP_NODES } from '../agentic-trip-workflow/graph.js';
-import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
+import { streamPlannerTurn } from '../agentic-trip-workflow/runtime.js';
 
 const router = Router();
 
@@ -25,10 +24,7 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
     const { threadId, runId, state = {}, messages = [] } = req.body;
     const sessionId = threadId;
     const userId = (state.userId as string) ?? 'ashwin';
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const userMessage = lastUser?.content ?? '';
-
-    const appNodeSet = new Set<string>(APP_NODES);
+    const userMessage = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
     console.log(`\n========= [chat] turn — session=${sessionId} runId=${runId.slice(0, 8)}…`);
     console.log(`[chat] user msg: "${userMessage.slice(0, 100)}"`);
@@ -37,45 +33,28 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
     );
 
     try {
-        send({ type: EventType.RUN_STARTED, threadId, runId });
-
-        // Pre-fetch AMS context outside the graph so nodes don't side-effect-read.
-        const [preferences, conv] = await Promise.all([
-            getPreferences(userId).catch(() => undefined),
-            getConversation(sessionId).catch(() => null),
-        ]);
-        const conversationHistory = (conv?.messages ?? []).map((m) => ({
-            role: m.role,
-            content: m.content,
-        }));
-        console.log(
-            `[chat] context — prior messages=${conversationHistory.length} preferences=${preferences ? 'yes' : 'none'}`,
+        await streamPlannerTurn(
+            { userId, sessionId, userMessage, state },
+            {
+                onStart: () => send({ type: EventType.RUN_STARTED, threadId, runId }),
+                onNodeStart: (nodeName) =>
+                    send({ type: EventType.STEP_STARTED, stepName: nodeName }),
+                onNodeUpdate: (_nodeName, delta) =>
+                    send({ type: EventType.STATE_SNAPSHOT, snapshot: delta }),
+                onNodeFinish: (nodeName) =>
+                    send({ type: EventType.STEP_FINISHED, stepName: nodeName }),
+                onFinish: () => send({ type: EventType.RUN_FINISHED, threadId, runId }),
+                onError: (err) =>
+                    send({
+                        type: EventType.RUN_ERROR,
+                        message: err.message ?? 'Unknown error',
+                        code: 'GRAPH_ERROR',
+                    }),
+            },
         );
-
-        const stream = await graph.stream(
-            { userId, sessionId, userMessage, ...state, preferences, conversationHistory },
-            { streamMode: 'updates' },
-        );
-
-        for await (const chunk of stream) {
-            // chunk has shape { [nodeName]: stateDelta }
-            for (const [nodeName, delta] of Object.entries(chunk as Record<string, unknown>)) {
-                if (!appNodeSet.has(nodeName)) continue;
-                send({ type: EventType.STEP_STARTED, stepName: nodeName });
-                if (delta && typeof delta === 'object') {
-                    send({ type: EventType.STATE_SNAPSHOT, snapshot: delta });
-                }
-                send({ type: EventType.STEP_FINISHED, stepName: nodeName });
-            }
-        }
-
-        send({ type: EventType.RUN_FINISHED, threadId, runId });
-    } catch (err) {
-        send({
-            type: EventType.RUN_ERROR,
-            message: (err as Error).message ?? 'Unknown error',
-            code: 'GRAPH_ERROR',
-        });
+    } catch {
+        // streamPlannerTurn already invoked `onError` before re-throwing —
+        // RUN_ERROR has been emitted; nothing more to do here.
     } finally {
         res.end();
     }

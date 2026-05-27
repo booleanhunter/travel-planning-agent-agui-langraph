@@ -14,7 +14,6 @@ import { z } from 'zod';
 import { config } from '#config';
 import { CitySchema, POISchema } from '#modules/places/types.js';
 import { WeatherSchema } from '#modules/weather/types.js';
-import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 import { getTrip } from '#modules/trips/domain/trips-service.js';
 import {
     awaitOAuthCompletion,
@@ -22,7 +21,7 @@ import {
     getValidToken,
 } from '#modules/calendar/domain/google-oauth-service.js';
 import { createEventForTrip } from '#modules/calendar/domain/calendar-service.js';
-import { graph } from '../agentic-trip-workflow/graph.js';
+import { streamPlannerTurn } from '../agentic-trip-workflow/runtime.js';
 import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 
 const USER_ID = 'ashwin';
@@ -147,32 +146,57 @@ export function createMcpServer(): McpServer {
             },
             outputSchema: planTripOutputSchema,
         },
-        async ({ userMessage }) => {
+        async ({ userMessage }, extra) => {
             const sessionId = SESSION_ID;
-            let state: Record<string, unknown> = {
-                userId: USER_ID,
-                sessionId,
-                userMessage,
-            };
+            let currentUserMessage = userMessage;
+            let state: Record<string, unknown> = {};
 
-            // Loop: invoke graph; if it returns an elicit, ask the MCP client via
-            // elicitInput and merge the response into state for the next invocation.
+            // If the MCP client passed a progressToken in _meta, push per-node
+            // progress notifications on the in-flight SSE stream. Most clients
+            // today don't pass one — this is opt-in and silently no-ops otherwise.
+            // `progress` is a monotonic counter (per the spec's expectation); we
+            // don't know the exact total ahead of time because the graph branches
+            // on intent, so we omit `total` and let the client render a bouncing
+            // indicator if it likes.
+            const progressToken = extra._meta?.progressToken;
+            let progress = 0;
+            const handlers =
+                progressToken !== undefined
+                    ? {
+                          onNodeStart: async (nodeName: string) => {
+                              progress += 1;
+                              await extra
+                                  .sendNotification({
+                                      method: 'notifications/progress',
+                                      params: {
+                                          progressToken,
+                                          progress,
+                                          message: `${nodeName}…`,
+                                      },
+                                  })
+                                  .catch((err) =>
+                                      console.warn(
+                                          '[planTrip] progress notification failed:',
+                                          (err as Error).message,
+                                      ),
+                                  );
+                          },
+                      }
+                    : {};
+
+            // Loop: drive the planner; if it returns an elicit, ask the MCP client
+            // via elicitInput and merge the response into state for the next round.
             // Cap iterations to avoid runaway loops if the agent keeps re-eliciting.
             for (let i = 0; i < 5; i++) {
-                // Pre-fetch AMS context outside the graph each iteration so the new
-                // assistant turn from the prior round (persisted by FollowUp's
-                // appendTurn) is visible to the next TravelAgent + FollowUp run.
-                const [preferences, conv] = await Promise.all([
-                    getPreferences(USER_ID).catch(() => undefined),
-                    getConversation(sessionId).catch(() => null),
-                ]);
-                const conversationHistory = (conv?.messages ?? []).map((m) => ({
-                    role: m.role,
-                    content: m.content,
-                }));
-                state = { ...state, preferences, conversationHistory };
-
-                const result = (await graph.invoke(state)) as AgentStateType;
+                const result = await streamPlannerTurn(
+                    {
+                        userId: USER_ID,
+                        sessionId,
+                        userMessage: currentUserMessage,
+                        state,
+                    },
+                    handlers,
+                );
 
                 if (!result.elicit) {
                     console.log(`no elicit requested, returning result`);
@@ -187,16 +211,16 @@ export function createMcpServer(): McpServer {
                     requestedSchema: result.elicit
                         .requestedSchema as ElicitRequestFormParams['requestedSchema'],
                 };
-                console.log(`eliciting from client — session=${sessionId} user=${USER_ID} elicit=${JSON.stringify(elicitParams)}`);
+                console.log(
+                    `eliciting from client — session=${sessionId} user=${USER_ID} elicit=${JSON.stringify(elicitParams)}`,
+                );
                 const reply = await server.server.elicitInput(elicitParams);
 
                 if (reply.action === 'accept' && reply.content) {
                     const content = reply.content as Record<string, unknown>;
+                    currentUserMessage = describeAcceptedContent(content);
                     state = {
                         ...result,
-                        userId: USER_ID,
-                        sessionId,
-                        userMessage: describeAcceptedContent(content),
                         destination:
                             (content.destination as string | undefined) ?? result.destination,
                         dates:
@@ -210,12 +234,10 @@ export function createMcpServer(): McpServer {
                         userDeclinedElicit: false,
                     };
                 } else if (reply.action === 'decline') {
+                    currentUserMessage =
+                        "I'd like to skip those details and continue with what we have.";
                     state = {
                         ...result,
-                        userId: USER_ID,
-                        sessionId,
-                        userMessage:
-                            "I'd like to skip those details and continue with what we have.",
                         elicit: undefined,
                         userDeclinedElicit: true,
                     };
