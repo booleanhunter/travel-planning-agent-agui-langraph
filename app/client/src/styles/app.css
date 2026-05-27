@@ -567,6 +567,31 @@
     padding: 12px 16px 16px;
 }
 
+/* ---------- Trip header pills (destination / dates / interests) ---------- */
+
+.trip-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.trip-header-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1;
+}
+.trip-header-pill-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
 /* ---------- Weather ---------- */
 
 .weather-card {

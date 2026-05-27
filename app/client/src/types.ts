@@ -153,8 +153,7 @@ export interface UserPreferences {
 
 export interface PastTrip {
     tripId: string;
-    sessionId: string;
-    city: City;
+    destination: City;
     dates?: { start: string; end: string };
     interests: string[];
     pickedPois: POI[];

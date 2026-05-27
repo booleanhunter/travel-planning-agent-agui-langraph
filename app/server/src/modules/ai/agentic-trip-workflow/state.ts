@@ -5,34 +5,26 @@ import type { UserPreferences } from '#modules/user/types.js';
 import type { ElicitSpec } from './types.js';
 
 /**
- * Record of one tool call the LLM made during a turn. FollowUp reads
- * this to extract slots (e.g. destination from `searchPois`'s `city` arg)
- * and to decide whether the agent did any work this turn at all.
- */
-export interface ToolCallRecord {
-    name: string;
-    args: Record<string, unknown>;
-}
-
-/**
  * Agent state passed between nodes. Each turn is one-shot: the graph runs
- * end-to-end and the final state is returned to the client. State that
- * survives between turns lives on the client (and in AMS for cross-session).
+ * end-to-end and the final state is returned to the transport. Persistence
+ * between turns lives in Redis trip-store + AMS — never in the client
+ * request body. `contextRetriever` is the single read point at graph entry;
+ * `followUp` is the single write point at graph exit.
  */
 export const AgentState = z.object({
     userId: z.string(),
-    sessionId: z.string(),
+    tripId: z.string(),
     userMessage: z.string(),
 
-    // Slots — set by FollowUp from TravelAgent's tool-call args (or carried in
-    // from the client across turns).
+    // Slots — hydrated by contextRetriever from Redis trip-store, refreshed
+    // by followUp's LLM extraction at the end of each turn.
     destination: CitySchema.optional(),
     dates: z.object({ start: z.string(), end: z.string() }).optional(),
     interests: z.array(z.string()).default([]),
     preferences: z.custom<UserPreferences>().optional(),
     /**
-     * Conversation history pre-fetched outside the graph (from AMS working
-     * memory). Nodes consume this directly — no in-node AMS reads.
+     * Conversation history hydrated by contextRetriever from AMS working
+     * memory. Nodes consume directly — no in-node AMS reads.
      */
     conversationHistory: z
         .array(z.object({ role: z.string(), content: z.string() }))
@@ -51,13 +43,6 @@ export const AgentState = z.object({
     response: z.string().optional(),
     suggestedActions: z.array(z.string()).default(() => []),
     elicit: z.custom<ElicitSpec>().optional(),
-
-    /**
-     * Record of which tools the LLM called in TravelAgent this turn. Read by
-     * FollowUp to extract slots (from tool args) and to decide whether the
-     * agent did any work — zero tool calls + destination missing → elicit.
-     */
-    toolCalls: z.custom<ToolCallRecord[]>().default(() => [] as ToolCallRecord[]),
 });
 
 export type AgentStateType = z.infer<typeof AgentState>;

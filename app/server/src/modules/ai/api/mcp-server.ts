@@ -22,11 +22,11 @@ import type { AgentStateType } from '../agentic-trip-workflow/state.js';
 const USER_ID = 'ashwin';
 
 /**
- * Fixed sessionId — one slot per user. Across multiple planTrip calls on a
- * single MCP connection, AMS conversation history accumulates and the
+ * Fixed tripId — one planning slot per user. Across multiple planTrip calls
+ * on a single MCP connection, AMS conversation history accumulates and the
  * trip-store carries the in-progress draft. Reset (via the web UI) clears it.
  */
-const SESSION_ID = 'newSessionId';
+const TRIP_ID = 'newTripId';
 
 // ----- Output schema for `planTrip` -------------------------------------------------
 // Declared on the tool so MCP-aware clients can render/parse the structured data
@@ -142,7 +142,7 @@ export function createMcpServer(): McpServer {
             outputSchema: planTripOutputSchema,
         },
         async ({ userMessage }, extra) => {
-            const sessionId = SESSION_ID;
+            const tripId = TRIP_ID;
             let currentUserMessage = userMessage;
             let state: Record<string, unknown> = {};
 
@@ -186,7 +186,7 @@ export function createMcpServer(): McpServer {
                 const result = await streamPlannerTurn(
                     {
                         userId: USER_ID,
-                        sessionId,
+                        tripId,
                         userMessage: currentUserMessage,
                         state,
                     },
@@ -217,7 +217,7 @@ export function createMcpServer(): McpServer {
                         message,
                     };
                     console.log(
-                        `eliciting URL from client — session=${sessionId} url=${url}`,
+                        `eliciting URL from client — tripId=${tripId} url=${url}`,
                     );
                     const reply = await server.server.elicitInput(elicit);
 
@@ -281,7 +281,7 @@ export function createMcpServer(): McpServer {
                         .requestedSchema as ElicitRequestFormParams['requestedSchema'],
                 };
                 console.log(
-                    `eliciting from client — session=${sessionId} user=${USER_ID} elicit=${JSON.stringify(elicitParams)}`,
+                    `eliciting from client — tripId=${tripId} user=${USER_ID} elicit=${JSON.stringify(elicitParams)}`,
                 );
                 const reply = await server.server.elicitInput(elicitParams);
 

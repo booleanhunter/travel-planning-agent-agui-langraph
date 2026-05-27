@@ -22,12 +22,12 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
     };
 
     const { threadId, runId, state = {}, messages = [] } = req.body;
-    const sessionId = threadId;
+    const tripId = threadId;
     const userId = (state.userId as string) ?? 'ashwin';
     const userMessage =
         [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
 
-    console.log(`\n========= [chat] turn — session=${sessionId} runId=${runId.slice(0, 8)}…`);
+    console.log(`\n========= [chat] turn — tripId=${tripId} runId=${runId.slice(0, 8)}…`);
     console.log(`[chat] user msg: "${userMessage.slice(0, 100)}"`);
     console.log(
         `[chat] client state: destination=${state.destination ?? '—'} dates=${state.dates ? JSON.stringify(state.dates) : '—'} interests=[${Array.isArray(state.interests) ? (state.interests as string[]).join(',') : ''}] pickedPoiIds=${Array.isArray(state.pickedPoiIds) ? (state.pickedPoiIds as string[]).length : 0}`,
@@ -35,7 +35,7 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
 
     try {
         await streamPlannerTurn(
-            { userId, sessionId, userMessage, state },
+            { userId, tripId, userMessage, state },
             {
                 onStart: () => send({ type: EventType.RUN_STARTED, threadId, runId }),
                 onNodeStart: (nodeName) =>

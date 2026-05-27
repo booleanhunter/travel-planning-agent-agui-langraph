@@ -130,7 +130,7 @@ export function MemoryDrawer({ userId, open, onClose, onLoadTrip, onReset }: Pro
                                         className="past-trip"
                                         onClick={() => onLoadTrip(trip)}
                                     >
-                                        <div className="past-trip-city">{trip.city}</div>
+                                        <div className="past-trip-city">{trip.destination}</div>
                                         <div className="past-trip-meta">
                                             {trip.dates
                                                 ? `${trip.dates.start} → ${trip.dates.end}`
