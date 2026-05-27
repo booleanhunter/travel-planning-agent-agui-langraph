@@ -24,7 +24,8 @@ router.post('/', async (req: Request<unknown, unknown, RunAgentInputBody>, res: 
     const { threadId, runId, state = {}, messages = [] } = req.body;
     const sessionId = threadId;
     const userId = (state.userId as string) ?? 'ashwin';
-    const userMessage = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+    const userMessage =
+        [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
 
     console.log(`\n========= [chat] turn — session=${sessionId} runId=${runId.slice(0, 8)}…`);
     console.log(`[chat] user msg: "${userMessage.slice(0, 100)}"`);

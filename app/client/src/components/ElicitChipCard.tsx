@@ -28,23 +28,24 @@ export function ElicitChipCard({ spec, onSubmit, onDecline, onCancel }: Props) {
     // Esc key → cancel action.
     useEffect(() => {
         if (!onCancel) return;
-        const handler = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onCancel();
+        const handler = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onCancel();
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [onCancel]);
 
-    const setValue = (name: string, v: unknown) => setValues((s) => ({ ...s, [name]: v }));
+    const setValue = (name: string, value: unknown) =>
+        setValues((prevValues) => ({ ...prevValues, [name]: value }));
 
     // Whether any property has a meaningful value — controls Continue disabled state.
     const hasAnyValue = Object.entries(spec.requestedSchema.properties).some(([name]) => {
-        const v = values[name];
-        if (v === undefined || v === null) return false;
-        if (typeof v === 'string') return v.trim().length > 0;
-        if (Array.isArray(v)) return v.length > 0;
-        if (typeof v === 'boolean') return v;
-        if (typeof v === 'number') return true;
+        const value = values[name];
+        if (value === undefined || value === null) return false;
+        if (typeof value === 'string') return value.trim().length > 0;
+        if (Array.isArray(value)) return value.length > 0;
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return true;
         return false;
     });
 
@@ -60,7 +61,7 @@ export function ElicitChipCard({ spec, onSubmit, onDecline, onCancel }: Props) {
                     name={name}
                     schema={schema}
                     value={values[name]}
-                    onChange={(v) => setValue(name, v)}
+                    onChange={(value) => setValue(name, value)}
                 />
             ))}
 
@@ -87,7 +88,7 @@ interface FieldProps {
     name: string;
     schema: ElicitPrimitiveSchema;
     value: unknown;
-    onChange: (v: unknown) => void;
+    onChange: (value: unknown) => void;
 }
 
 function FieldRenderer({ schema, value, onChange }: FieldProps) {
@@ -106,13 +107,13 @@ function FieldRenderer({ schema, value, onChange }: FieldProps) {
 function renderInput(
     schema: ElicitPrimitiveSchema,
     value: unknown,
-    onChange: (v: unknown) => void,
+    onChange: (value: unknown) => void,
 ) {
     // Single-select string enum (via oneOf or plain enum)
     if (schema.type === 'string' && (schema.oneOf || schema.enum)) {
         const options = schema.oneOf
-            ? schema.oneOf.map((o) => ({ value: o.const, label: o.title ?? o.const }))
-            : (schema.enum ?? []).map((v) => ({ value: v, label: v }));
+            ? schema.oneOf.map((entry) => ({ value: entry.const, label: entry.title ?? entry.const }))
+            : (schema.enum ?? []).map((enumValue) => ({ value: enumValue, label: enumValue }));
         return (
             <div className="elicit-chips">
                 {options.map((opt) => (
@@ -136,7 +137,7 @@ function renderInput(
                 type="date"
                 className="elicit-date"
                 value={(value as string | undefined) ?? ''}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(event) => onChange(event.target.value)}
             />
         );
     }
@@ -148,7 +149,7 @@ function renderInput(
                 type="text"
                 className="elicit-date"
                 value={(value as string | undefined) ?? ''}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(event) => onChange(event.target.value)}
                 style={{ width: '100%' }}
             />
         );
@@ -163,8 +164,8 @@ function renderInput(
                 value={(value as number | undefined) ?? ''}
                 min={schema.minimum}
                 max={schema.maximum}
-                onChange={(e) =>
-                    onChange(e.target.value === '' ? undefined : Number(e.target.value))
+                onChange={(event) =>
+                    onChange(event.target.value === '' ? undefined : Number(event.target.value))
                 }
             />
         );
@@ -176,7 +177,7 @@ function renderInput(
             <input
                 type="checkbox"
                 checked={(value as boolean | undefined) ?? false}
-                onChange={(e) => onChange(e.target.checked)}
+                onChange={(event) => onChange(event.target.checked)}
             />
         );
     }
@@ -185,8 +186,8 @@ function renderInput(
     if (schema.type === 'array') {
         const items = schema.items;
         const options = items.anyOf
-            ? items.anyOf.map((o) => ({ value: o.const, label: o.title ?? o.const }))
-            : (items.enum ?? []).map((v) => ({ value: v, label: v }));
+            ? items.anyOf.map((entry) => ({ value: entry.const, label: entry.title ?? entry.const }))
+            : (items.enum ?? []).map((enumValue) => ({ value: enumValue, label: enumValue }));
         const current = (value as string[] | undefined) ?? [];
         return (
             <div className="elicit-chips">
@@ -200,7 +201,7 @@ function renderInput(
                             onClick={() =>
                                 onChange(
                                     selected
-                                        ? current.filter((v) => v !== opt.value)
+                                        ? current.filter((existing) => existing !== opt.value)
                                         : [...current, opt.value],
                                 )
                             }

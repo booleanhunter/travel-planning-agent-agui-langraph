@@ -136,11 +136,11 @@ function photoUrlFor(apiKey, ref) {
     return `${PLACES_BASE}/${ref}/media?maxHeightPx=400&key=${apiKey}`;
 }
 
-function buildDescription(p) {
-    const summary = p.editorialSummary?.text;
+function buildDescription(place) {
+    const summary = place.editorialSummary?.text;
     if (summary) return summary;
-    const primaryType = p.primaryTypeDisplayName?.text ?? '';
-    const address = p.formattedAddress ?? '';
+    const primaryType = place.primaryTypeDisplayName?.text ?? '';
+    const address = place.formattedAddress ?? '';
     return `${primaryType}${primaryType && address ? ' — ' : ''}${address}`.trim();
 }
 
@@ -149,22 +149,22 @@ async function gatherForCategory(apiKey, city, category) {
     if (!queries.length) return [];
     const seen = new Set();
     const accepted = [];
-    for (const q of queries) {
+    for (const query of queries) {
         if (accepted.length >= PER_CATEGORY) break;
-        const data = await searchTextForCategory(apiKey, city, q);
-        for (const p of data.places ?? []) {
-            if (!p.id || seen.has(p.id)) continue;
+        const data = await searchTextForCategory(apiKey, city, query);
+        for (const place of data.places ?? []) {
+            if (!place.id || seen.has(place.id)) continue;
             if (accepted.length >= PER_CATEGORY) break;
-            seen.add(p.id);
-            const lat = p.location?.latitude;
-            const lng = p.location?.longitude;
+            seen.add(place.id);
+            const lat = place.location?.latitude;
+            const lng = place.location?.longitude;
             if (lat === undefined || lng === undefined) continue;
             accepted.push({
-                id: p.id,
-                name: p.displayName?.text ?? 'Unknown',
-                description: buildDescription(p),
-                rating: p.rating ?? 0,
-                photoUrl: photoUrlFor(apiKey, p.photos?.[0]?.name),
+                id: place.id,
+                name: place.displayName?.text ?? 'Unknown',
+                description: buildDescription(place),
+                rating: place.rating ?? 0,
+                photoUrl: photoUrlFor(apiKey, place.photos?.[0]?.name),
                 category,
                 city: city.id,
                 lat,
@@ -178,7 +178,7 @@ async function gatherForCategory(apiKey, city, category) {
 async function gatherForCity(apiKey, city) {
     const categories = Object.keys(CATEGORY_QUERIES);
     const byCategory = await Promise.all(
-        categories.map((c) => gatherForCategory(apiKey, city, c)),
+        categories.map((category) => gatherForCategory(apiKey, city, category)),
     );
     return byCategory.flat();
 }

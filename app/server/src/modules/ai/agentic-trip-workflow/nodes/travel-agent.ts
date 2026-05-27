@@ -61,8 +61,8 @@ export async function travelAgent(state: AgentStateType): Promise<Partial<AgentS
 
     const today = new Date().toISOString().split('T')[0];
 
-    const priorMessages: BaseMessage[] = state.conversationHistory.map((m) =>
-        m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
+    const priorMessages: BaseMessage[] = state.conversationHistory.map((message) =>
+        message.role === 'user' ? new HumanMessage(message.content) : new AIMessage(message.content),
     );
 
     const messages: BaseMessage[] = [

@@ -91,14 +91,14 @@ export function useAgentStream(): AgentStream & {
         if (delta.suggestedActions !== undefined)
             setSuggestedActions(delta.suggestedActions as string[]);
         if (delta.destination !== undefined)
-            setResolvedSlots((s) => ({ ...s, destination: delta.destination as City }));
+            setResolvedSlots((prev) => ({ ...prev, destination: delta.destination as City }));
         if (delta.dates !== undefined)
-            setResolvedSlots((s) => ({
-                ...s,
+            setResolvedSlots((prev) => ({
+                ...prev,
                 dates: delta.dates as { start: string; end: string },
             }));
         if (delta.interests !== undefined)
-            setResolvedSlots((s) => ({ ...s, interests: delta.interests as string[] }));
+            setResolvedSlots((prev) => ({ ...prev, interests: delta.interests as string[] }));
         if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as POI[]);
         // Note: the response → conversation push happens in the subscriber so we can
         // associate the message with the current turnId.
@@ -147,10 +147,10 @@ export function useAgentStream(): AgentStream & {
 
             agent.threadId = sessionId;
             agent.setMessages([
-                ...conversation.map((m) => ({
+                ...conversation.map((message) => ({
                     id: `${Date.now()}`,
-                    role: m.role,
-                    content: m.content,
+                    role: message.role,
+                    content: message.content,
                 })),
                 { id: `${Date.now()}-u`, role: 'user', content: input.userMessage },
             ]);
@@ -159,16 +159,18 @@ export function useAgentStream(): AgentStream & {
             // Helper: update dots on the most recent user entry.
             const updateLatestUserDots = (stepName: string, status: DotStatus) =>
                 setConversation((prev) => {
-                    let idx = -1;
-                    for (let i = prev.length - 1; i >= 0; i--) {
-                        if (prev[i].role === 'user') {
-                            idx = i;
+                    let lastUserIdx = -1;
+                    for (let index = prev.length - 1; index >= 0; index--) {
+                        if (prev[index].role === 'user') {
+                            lastUserIdx = index;
                             break;
                         }
                     }
-                    if (idx === -1) return prev;
-                    return prev.map((e, i) =>
-                        i === idx ? { ...e, dots: { ...(e.dots ?? {}), [stepName]: status } } : e,
+                    if (lastUserIdx === -1) return prev;
+                    return prev.map((entry, index) =>
+                        index === lastUserIdx
+                            ? { ...entry, dots: { ...(entry.dots ?? {}), [stepName]: status } }
+                            : entry,
                     );
                 });
 

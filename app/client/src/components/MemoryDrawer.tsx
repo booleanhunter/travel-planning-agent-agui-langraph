@@ -23,15 +23,15 @@ export function MemoryDrawer({ userId, open, onClose, onLoadTrip, onReset }: Pro
         if (!open) return;
         setLoading(true);
         fetch(`/api/user/profile?userId=${userId}`)
-            .then((r) => r.json())
+            .then((response) => response.json())
             .then((data: Profile) => setProfile(data))
             .finally(() => setLoading(false));
     }, [open, userId]);
 
     useEffect(() => {
         if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onClose();
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
@@ -42,7 +42,7 @@ export function MemoryDrawer({ userId, open, onClose, onLoadTrip, onReset }: Pro
     return (
         <>
             <div className="drawer-backdrop" onClick={onClose} />
-            <div className="drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer" onClick={(event) => event.stopPropagation()}>
                 <div className="drawer-header">
                     <strong>Memory & history</strong>
                     <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
@@ -123,7 +123,7 @@ export function MemoryDrawer({ userId, open, onClose, onLoadTrip, onReset }: Pro
                         <h3>Past trips</h3>
                         {profile && profile.pastTrips.length > 0 ? (
                             profile.pastTrips.map((trip) => {
-                                const placeNames = trip.pickedPois.map((p) => p.name).join(', ');
+                                const placeNames = trip.pickedPois.map((poi) => poi.name).join(', ');
                                 return (
                                     <div
                                         key={trip.tripId}

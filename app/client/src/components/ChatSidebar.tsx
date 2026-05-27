@@ -51,12 +51,12 @@ export function ChatSidebar({ conversation, elicitSlot, followupSlot, inputSlot 
                     </div>
                 )}
 
-                {conversation.map((m, i) => (
-                    <Fragment key={i}>
-                        <div className={`msg msg-${m.role}`}>
-                            <div className="msg-bubble">{m.content}</div>
+                {conversation.map((entry, index) => (
+                    <Fragment key={index}>
+                        <div className={`msg msg-${entry.role}`}>
+                            <div className="msg-bubble">{entry.content}</div>
                         </div>
-                        {m.role === 'user' && m.dots && <DotsBlock dots={m.dots} />}
+                        {entry.role === 'user' && entry.dots && <DotsBlock dots={entry.dots} />}
                     </Fragment>
                 ))}
 

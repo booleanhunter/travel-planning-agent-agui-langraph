@@ -21,8 +21,8 @@ function FitToBounds({ picked }: Props) {
     const map = useMap();
     useEffect(() => {
         if (!picked.length) return;
-        const lats = picked.map((p) => p.lat);
-        const lngs = picked.map((p) => p.lng);
+        const lats = picked.map((poi) => poi.lat);
+        const lngs = picked.map((poi) => poi.lng);
         const bounds: [[number, number], [number, number]] = [
             [Math.min(...lats), Math.min(...lngs)],
             [Math.max(...lats), Math.max(...lngs)],
@@ -36,7 +36,7 @@ export function LiveRouteMap({ picked }: Props) {
     if (picked.length === 0) return null;
 
     const center: [number, number] = [picked[0].lat, picked[0].lng];
-    const polyline = picked.map((p) => [p.lat, p.lng] as [number, number]);
+    const polyline = picked.map((poi) => [poi.lat, poi.lng] as [number, number]);
 
     return (
         <div className="route-map">
@@ -45,11 +45,11 @@ export function LiveRouteMap({ picked }: Props) {
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                {picked.map((p, i) => (
-                    <Marker key={p.id} position={[p.lat, p.lng]} icon={markerIcon}>
+                {picked.map((poi, index) => (
+                    <Marker key={poi.id} position={[poi.lat, poi.lng]} icon={markerIcon}>
                         <Popup>
                             <strong>
-                                {i + 1}. {p.name}
+                                {index + 1}. {poi.name}
                             </strong>
                         </Popup>
                     </Marker>

@@ -16,42 +16,42 @@ export function PointOfInterestGrid({ pois, pickedIds, sortByIds, onToggle }: Pr
     const pickedSet = new Set(pickedIds);
 
     const orderedPois = useMemo(() => {
-        const order = new Map(sortByIds.map((id, i) => [id, i]));
-        return [...pois].sort((a, b) => {
-            const ai = order.get(a.id);
-            const bi = order.get(b.id);
-            if (ai !== undefined && bi === undefined) return -1;
-            if (ai === undefined && bi !== undefined) return 1;
-            if (ai !== undefined && bi !== undefined) return ai - bi;
+        const order = new Map(sortByIds.map((id, index) => [id, index]));
+        return [...pois].sort((poiA, poiB) => {
+            const aIndex = order.get(poiA.id);
+            const bIndex = order.get(poiB.id);
+            if (aIndex !== undefined && bIndex === undefined) return -1;
+            if (aIndex === undefined && bIndex !== undefined) return 1;
+            if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
             return 0;
         });
     }, [pois, sortByIds]);
 
     return (
         <div className="poi-grid">
-            {orderedPois.map((p) => {
-                const picked = pickedSet.has(p.id);
+            {orderedPois.map((poi) => {
+                const picked = pickedSet.has(poi.id);
                 return (
                     <div
-                        key={p.id}
+                        key={poi.id}
                         className={`poi-card ${picked ? 'picked' : ''}`}
-                        onClick={() => onToggle(p)}
+                        onClick={() => onToggle(poi)}
                     >
-                        {p.photoUrl && (
+                        {poi.photoUrl && (
                             <div
                                 className="poi-photo"
-                                style={{ backgroundImage: `url(${p.photoUrl})` }}
+                                style={{ backgroundImage: `url(${poi.photoUrl})` }}
                             />
                         )}
                         <div className="poi-info">
-                            <h4 className="poi-name">{p.name}</h4>
+                            <h4 className="poi-name">{poi.name}</h4>
                             <div className="poi-meta">
-                                <span className="poi-rating">★ {p.rating.toFixed(1)}</span>
-                                <span className="poi-category">{p.category}</span>
+                                <span className="poi-rating">★ {poi.rating.toFixed(1)}</span>
+                                <span className="poi-category">{poi.category}</span>
                             </div>
                             <div className="poi-desc">
-                                {p.description.slice(0, 100)}
-                                {p.description.length > 100 ? '…' : ''}
+                                {poi.description.slice(0, 100)}
+                                {poi.description.length > 100 ? '…' : ''}
                             </div>
                         </div>
                         <div className="poi-check">

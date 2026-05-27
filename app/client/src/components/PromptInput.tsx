@@ -9,8 +9,8 @@ interface Props {
 export function PromptInput({ onSubmit, disabled, placeholder }: Props) {
     const [text, setText] = useState('');
 
-    const handleSubmit = (e: FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = (event: FormEvent) => {
+        event.preventDefault();
         const trimmed = text.trim();
         if (!trimmed || disabled) return;
         onSubmit(trimmed);
@@ -22,7 +22,7 @@ export function PromptInput({ onSubmit, disabled, placeholder }: Props) {
             <input
                 className="prompt-input"
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(event) => setText(event.target.value)}
                 placeholder={placeholder ?? 'Ask the trip planner…'}
                 disabled={disabled}
                 autoFocus
