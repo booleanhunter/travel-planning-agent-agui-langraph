@@ -55,9 +55,14 @@ router.get('/callback', async (req: Request, res: Response) => {
                     `(function(){
                         try {
                             if (window.opener) {
+                                // targetOrigin '*' — in dev the opener (Vite at :5173)
+                                // and this callback page (Express at :3000) are different
+                                // origins. The elicitationId in the payload is a fresh
+                                // UUID only this client and server know, so it's the
+                                // semantic auth here.
                                 window.opener.postMessage(
                                     { type: 'oauth-complete', elicitationId: '${safeId}' },
-                                    window.location.origin
+                                    '*'
                                 );
                             }
                         } catch (err) {
