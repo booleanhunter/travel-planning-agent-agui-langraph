@@ -212,58 +212,80 @@ export function makeGetWeatherTool(onApplied: (weather: Weather) => void) {
  * Build the `saveTripToCalendar` tool. The agent calls this when the user
  * wants to export their trip to Google Calendar.
  *
+ * The tool accepts the trip identifier plus optional overrides for
+ * destination + dates. LLM-supplied args take priority over the persisted
+ * trip — this lets the agent pass freshly-extracted info from the current
+ * user message (e.g. dates from a chip-card submission) even if it hasn't
+ * been written to Redis yet.
+ *
  * If we have a valid cached Google token, the tool creates the calendar
- * event directly and returns success. Otherwise it requests URL-mode
- * elicitation: the tool body builds an OAuth start URL with a fresh
- * elicitationId, hands the elicit spec to `onElicitNeeded` (which the
- * calling node uses to set `state.elicit`), and returns `needsAuth: true`.
- *
- * The actual wait-for-OAuth happens in the transport layer:
- *   - MCP: `planTrip`'s elicit-resume loop calls `awaitOAuthCompletion`
- *     against the in-process deferred resolved by `/oauth/google/callback`.
- *   - AG-UI: the React app opens the URL in a new tab and listens for a
- *     `postMessage` from the OAuth callback page, then auto-resubmits the
- *     same userMessage so the tool runs again with the now-cached token.
- *
- * The tool body itself never blocks waiting for OAuth — both transports
- * handle the wait their own way.
+ * event directly. Otherwise it signals URL-mode elicitation: the tool
+ * body builds an OAuth start URL with a fresh elicitationId, hands the
+ * elicit spec to `onElicitNeeded` (which the calling node uses to set
+ * `state.elicit`), and returns `needsAuth: true`. The wait-for-OAuth
+ * happens at the transport layer; this tool body never blocks.
  */
 export function makeSaveTripToCalendarTool(
-    state: AgentStateType,
+    userId: string,
     onElicitNeeded: (elicit: URLElicitSpec) => void,
 ) {
     return tool(
-        async ({ tripId }: { tripId: string }) => {
+        async ({
+            tripId,
+            destination,
+            startDate,
+            endDate,
+        }: {
+            tripId: string;
+            destination?: City;
+            startDate?: string;
+            endDate?: string;
+        }) => {
             console.log(
-                `🔧 [tools] saveTripToCalendar — user=${state.userId} tripId=${tripId}`,
+                `🔧 [tools] saveTripToCalendar — user=${userId} tripId=${tripId} args=${JSON.stringify({ destination, startDate, endDate })}`,
             );
-            const trip = await getTrip(state.userId, tripId);
+            const trip = await getTrip(userId, tripId);
             if (!trip) {
                 return {
                     saved: false,
-                    error: `No trip found with id "${tripId}" for user ${state.userId}.`,
+                    error: `No trip found with id "${tripId}" for user ${userId}.`,
                 };
             }
-            if (!trip.dates) {
+
+            // LLM-supplied args win over persisted trip values — the LLM may
+            // have read fresh info from this turn's user message that hasn't
+            // been persisted to Redis yet (the trip-store write happens later
+            // in followUp).
+            const tripDestination = destination ?? trip.destination;
+            const finalDates =
+                startDate && endDate ? { start: startDate, end: endDate } : trip.dates;
+
+            if (!finalDates) {
                 return {
                     saved: false,
-                    error: 'This trip has no dates set — cannot create a calendar event.',
+                    error:
+                        'No travel dates available. Ask the user for startDate and endDate, then ' +
+                        'call this tool again INCLUDING them as args.',
                 };
             }
 
             // 1. Already have a valid token? Create directly.
-            const token = await getValidToken(state.userId);
+            const token = await getValidToken(userId);
             if (token) {
                 try {
-                    const event = await createEventForTrip(token.accessToken, trip);
+                    const event = await createEventForTrip(token.accessToken, {
+                        ...trip,
+                        destination: tripDestination,
+                        dates: finalDates,
+                    });
                     console.log(
-                        `🔧 [tools] saveTripToCalendar — created ${event.id} for ${state.userId}/${trip.tripId}`,
+                        `🔧 [tools] saveTripToCalendar — created ${event.id} for ${userId}/${tripId}`,
                     );
                     return {
                         saved: true,
                         eventLink: event.htmlLink,
-                        destination: trip.destination,
-                        dates: trip.dates,
+                        destination: tripDestination,
+                        dates: finalDates,
                     };
                 } catch (err) {
                     return {
@@ -274,20 +296,15 @@ export function makeSaveTripToCalendarTool(
             }
 
             // 2. No token — signal URL-mode elicit via the host node.
-            //    The graph tool body does NOT await; the transport layer
-            //    handles the wait-for-OAuth + retry.
             const elicitationId = randomUUID();
             const startUrl = `${config.publicBaseUrl}/oauth/google/start?elicitationId=${elicitationId}`;
-            // Register the pending flow so the OAuth callback knows which
-            // userId to save the token against. AG-UI doesn't await; MCP's
-            // planTrip resume loop attaches a deferred via awaitOAuthCompletion.
-            registerPendingFlow(elicitationId, state.userId);
+            registerPendingFlow(elicitationId, userId);
             onElicitNeeded({
                 mode: 'url',
                 url: startUrl,
                 elicitationId,
                 message:
-                    `To save "Trip to ${trip.destination}" to your Google Calendar, ` +
+                    `To save "Trip to ${tripDestination}" to your Google Calendar, ` +
                     'sign in with Google to grant calendar permission.',
             });
             return {
@@ -301,19 +318,32 @@ export function makeSaveTripToCalendarTool(
         {
             name: 'saveTripToCalendar',
             description:
-                'Save a trip to the user\'s Google Calendar as an all-day event. ' +
-                'Call this when the user asks to save their trip / add it to their calendar. ' +
-                'Pass the tripId — for the current planning slot, this is the fixed value "newTripId"; ' +
-                'for past trips use the seeded id (e.g. "seed-ashwin-bangalore"). ' +
-                'If we have no Google access token cached, the tool will request OAuth via URL-mode elicit; ' +
-                'in that case it returns { saved: false, needsAuth: true } and the user has to complete the ' +
-                'sign-in flow before retrying.',
+                "Save a trip to the user's Google Calendar as an all-day event. " +
+                "Pass `tripId`. For the current planning slot use \"newTripId\"; for past trips " +
+                'use the seeded id (e.g. "seed-ashwin-bangalore"). ' +
+                "If the user mentioned travel dates or a destination THIS turn (e.g. via a chip-card " +
+                "submission or 'I'll travel from X to Y'), ALWAYS include them as startDate, endDate, " +
+                "and destination args — they may not yet be persisted in the trip-store. The tool " +
+                'falls back to the persisted trip values only if you do not supply them. ' +
+                "If the tool returns `needsAuth: true`, do NOT call it again — tell the user to " +
+                'complete the sign-in prompt that appeared. ' +
+                "If it returns `error: 'No travel dates...'`, ask the user for dates and call again WITH them.",
             schema: z.object({
-                tripId: z
+                tripId: z.string().describe('The trip to save (planning slot uses "newTripId").'),
+                destination: CitySchema.optional().describe(
+                    'Override destination if the user mentioned a different city this turn.',
+                ),
+                startDate: z
                     .string()
+                    .optional()
                     .describe(
-                        'The trip to save (the user\'s working planning slot uses tripId "newTripId").',
+                        'ISO YYYY-MM-DD trip start date. Pass this if the user mentioned it this turn, ' +
+                            'even if you think it was saved before.',
                     ),
+                endDate: z
+                    .string()
+                    .optional()
+                    .describe('ISO YYYY-MM-DD trip end date.'),
             }),
         },
     );
