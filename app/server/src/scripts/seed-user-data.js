@@ -2,6 +2,7 @@
  * seed-user-data.js — ingest persona data from datasets/users.json.
  *
  * For each user defined in the dataset:
+ *   - Wipes the user's existing long-term memories (idempotent reseed).
  *   - Writes preference memories to AMS long-term memory.
  *   - For each past trip:
  *       - Joins pickedPoiIds against datasets/pois.json to materialize full POI
@@ -12,7 +13,11 @@
  *         ['trip_history', city, ...interests] so the future getPreviousTrips
  *         tool can find it via semantic search.
  *
- * Memory IDs are deterministic — re-running overwrites the same records.
+ * Memory IDs are minted client-side as ULIDs (AMS uses the same format for
+ * memories it auto-extracts from chat) so seeded records are indistinguishable
+ * from auto-extracted ones — same schema, same key namespace, same API
+ * behavior. To stay idempotent, each run wipes the user's existing long-term
+ * memories before recreating them.
  *
  * Reads:
  *   server/datasets/users.json
@@ -30,6 +35,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from 'redis';
 import { MemoryAPIClient } from 'agent-memory-client';
+import { ulid } from 'ulid';
 import dotenv from 'dotenv';
 
 // ----- env loading ---------------------------------------------------------
@@ -67,9 +73,18 @@ async function writeTrip(redis, userId, trip, pickedPois) {
     });
 }
 
-/** Write a batch of MemoryRecords to AMS long-term memory. */
+/**
+ * Write a batch of MemoryRecords to AMS long-term memory. AMS's create
+ * endpoint requires an `id` on every record; we mint a ULID per record so
+ * seeded memories are indistinguishable from the ULIDs AMS uses for memories
+ * it auto-extracts from chat.
+ */
 async function writeMemories(ams, userId, records) {
-    const enriched = records.map((record) => ({ ...record, user_id: userId }));
+    const enriched = records.map((record) => ({
+        ...record,
+        id: ulid(),
+        user_id: userId,
+    }));
     try {
         await ams.createLongTermMemory(enriched);
     } catch (err) {
@@ -104,12 +119,30 @@ function sanitizeEntity(name) {
 /** Build a trip-summary MemoryRecord for AMS. */
 function tripSummaryMemory(userId, trip, picks) {
     return {
-        id: `${userId}:${trip.tripId}`,
         user_id: userId,
         topics: ['trip_history', trip.destination ?? trip.city, ...trip.interests],
         entities: picks.map((poi) => sanitizeEntity(poi.name)),
         text: trip.summary,
     };
+}
+
+/**
+ * Wipe a user's long-term memories before reseeding. AMS's search endpoint
+ * caps limit at 100, so we drain in pages until empty.
+ */
+async function wipeUserMemories(ams, userId) {
+    let total = 0;
+    for (;;) {
+        const result = await ams.searchLongTermMemory({
+            text: '',
+            userId: { eq: userId },
+            limit: 100,
+        });
+        const ids = result.memories.map((m) => m.id);
+        if (!ids.length) return total;
+        await ams.deleteLongTermMemories(ids);
+        total += ids.length;
+    }
 }
 
 // ----- Entry point ----------------------------------------------------------
@@ -128,6 +161,10 @@ async function main() {
 
     for (const user of usersJson.users) {
         console.log(`\n=== ${user.displayName} (${user.userId}) ===`);
+
+        // 0. Wipe existing long-term memories so re-runs are idempotent.
+        const wiped = await wipeUserMemories(ams, user.userId);
+        if (wiped) console.log(`  ✓ wiped ${wiped} existing memories`);
 
         // 1. Preference memories → AMS
         await writeMemories(ams, user.userId, user.memories);
