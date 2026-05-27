@@ -1,27 +1,23 @@
 /**
  * Transport-agnostic planner turn runtime.
  *
- * One function both `api/chat.ts` (AG-UI / SSE) and `api/mcp-server.ts`
- * (MCP) call into. Pre-fetches AMS context, drives `graph.stream` with
- * `streamMode: "updates"`, fans per-node deltas out to caller-supplied
- * handlers, and returns the accumulated final state.
+ * Both `api/chat.ts` (AG-UI / SSE) and `api/mcp-server.ts` (MCP) call into
+ * this. The graph's first node (`contextRetriever`) handles state hydration
+ * from Redis trip-store + AMS — the runtime itself just streams the graph.
  *
- * The accumulated final state matches what `graph.invoke()` returns today
- * because we seed it by Zod-parsing the initial input — the schema's
- * declared defaults (e.g. `interests: []`, `pickedPois: []`) are applied
- * up front, then node deltas overwrite on top.
+ * `streamMode: "updates"` emits per-node deltas. We seed `finalState` by
+ * Zod-parsing the initial input so declared-default fields exist even when
+ * no node emits them; deltas overwrite on top.
  *
  * Transport-specific concerns stay outside:
  *   - AG-UI: maps handler callbacks to AG-UI event types in `chat.ts`.
  *   - MCP: maps `onNodeStart` to `notifications/progress` (when the client
  *     passes a `progressToken`) and keeps the elicit-resume loop in
- *     `mcp-server.ts` — MCP and AG-UI elicit semantics differ at the
- *     transport layer and can't be unified here.
+ *     `mcp-server.ts`.
  */
 
 import { graph, APP_NODES } from './graph.js';
 import { AgentState, type AgentStateType } from './state.js';
-import { getPreferences, getConversation } from '#modules/user/domain/user-service.js';
 
 export interface PlannerStreamHandlers {
     onStart?: () => void;
@@ -34,19 +30,18 @@ export interface PlannerStreamHandlers {
 
 export interface PlannerInput {
     userId: string;
-    sessionId: string;
+    tripId: string;
     userMessage: string;
-    /** Caller-supplied state to merge into the initial graph input. */
+    /** Optional one-shot fields a transport wants to inject (e.g. userDeclinedElicit). */
     state?: Record<string, unknown>;
 }
 
 const appNodeSet: ReadonlySet<string> = new Set(APP_NODES);
 
 /**
- * Drive one planner turn. Returns the merged final state (equivalent to
- * what `graph.invoke()` would return today). Throws on graph error after
- * calling `onError` — caller catches and constructs a transport-native
- * error response.
+ * Drive one planner turn. Returns the merged final state. Throws on graph
+ * error after calling `onError` — caller catches and constructs a
+ * transport-native error response.
  */
 export async function streamPlannerTurn(
     input: PlannerInput,
@@ -55,31 +50,15 @@ export async function streamPlannerTurn(
     try {
         handlers.onStart?.();
 
-        const [preferences, conv] = await Promise.all([
-            getPreferences(input.userId).catch(() => undefined),
-            getConversation(input.sessionId).catch(() => null),
-        ]);
-        const conversationHistory = (conv?.messages ?? []).map((message) => ({
-            role: message.role,
-            content: message.content,
-        }));
-
-        // Build the initial graph input. Caller `state` may include client-side
-        // fields (e.g. `pickedPoiIds`) that AgentState doesn't declare; Zod
-        // strips unknown keys during `.parse()`.
         const initialInput = {
             ...(input.state ?? {}),
             userId: input.userId,
-            sessionId: input.sessionId,
+            tripId: input.tripId,
             userMessage: input.userMessage,
-            preferences,
-            conversationHistory,
         };
 
         // Seed finalState with Zod-parsed defaults so declared-default fields
-        // (`interests: []`, `pickedPois: []`, `pois: []`, `suggestedActions: []`)
-        // exist even if no node emits them. Optional fields without defaults
-        // (`destination`, `dates`, `elicit`, ...) stay undefined.
+        // exist even if no node emits them.
         let finalState: AgentStateType = AgentState.parse(initialInput);
 
         const stream = await graph.stream(initialInput, { streamMode: 'updates' });

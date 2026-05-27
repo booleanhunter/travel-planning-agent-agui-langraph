@@ -13,7 +13,7 @@ import {
 } from '../data/trips-repository.js';
 
 interface DraftFields {
-    city?: City;
+    destination?: City;
     startDate?: string;
     endDate?: string;
     interests?: string[];
@@ -50,7 +50,7 @@ export async function commitPicks(
             enriched.push(fromCurrent);
             continue;
         }
-        // 2. Check prior picks (carried in from client state).
+        // 2. Check prior picks (carried in from contextRetriever's hydration).
         const prior = priorById.get(pick.poiId);
         if (prior) {
             enriched.push(prior);
@@ -110,8 +110,8 @@ function generateTripSummary(trip: PastTrip): string {
         : null;
     parts.push(
         days
-            ? `${days}-day trip to ${trip.city} from ${trip.dates!.start} to ${trip.dates!.end}.`
-            : `Trip to ${trip.city}.`,
+            ? `${days}-day trip to ${trip.destination} from ${trip.dates!.start} to ${trip.dates!.end}.`
+            : `Trip to ${trip.destination}.`,
     );
     if (trip.interests.length) parts.push(`Focused on ${trip.interests.join(', ')}.`);
     if (trip.pickedPois.length)
@@ -129,7 +129,7 @@ export async function archiveTripToMemory(userId: string, trip: PastTrip): Promi
         {
             id: `${userId}:${trip.tripId}`,
             user_id: userId,
-            topics: ['trip_history', trip.city, ...trip.interests],
+            topics: ['trip_history', trip.destination, ...trip.interests],
             entities: trip.pickedPois.map((poi) => sanitizeEntity(poi.name)),
             text: generateTripSummary(trip),
         },
@@ -138,17 +138,17 @@ export async function archiveTripToMemory(userId: string, trip: PastTrip): Promi
 
 /**
  * Reset the user's working planning slot:
- *   - delete the trip-store HASH for this session (working trip is gone)
- *   - wipe AMS working memory for the session (conversation cleared)
+ *   - delete the trip-store HASH for this tripId (working trip is gone)
+ *   - wipe AMS working memory for the tripId (conversation cleared)
  *   - clear the Google OAuth token (next saveTripToCalendar re-authorizes)
  *
  * Past trips (status: completed) are NOT touched — they live under different
  * tripIds and remain in trip-store + AMS long-term.
  */
-export async function resetWorkingTrip(userId: string, sessionId: string): Promise<void> {
+export async function resetWorkingTrip(userId: string, tripId: string): Promise<void> {
     await Promise.all([
-        repoDeleteTrip(userId, sessionId),
-        deleteWorkingMemory(sessionId).catch((err) =>
+        repoDeleteTrip(userId, tripId),
+        deleteWorkingMemory(tripId).catch((err) =>
             console.error('[trips-service] deleteWorkingMemory failed:', (err as Error).message),
         ),
         clearGoogleToken(userId).catch((err) =>

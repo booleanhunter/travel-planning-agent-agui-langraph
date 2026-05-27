@@ -8,6 +8,7 @@ import { PointOfInterestGrid } from './components/PointOfInterestGrid';
 import { PlanAccordion } from './components/PlanAccordion';
 import { LiveRouteMap } from './components/LiveRouteMap';
 import { WeatherCard } from './components/WeatherCard';
+import { TripHeaderCard } from './components/TripHeaderCard';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import type { POI, PastTrip, City } from './types';
 
@@ -107,7 +108,11 @@ export function App() {
                 ? 'Here are the details: ' + sentences.join(' ')
                 : 'Here are the details from the form.';
 
-            stream.submitTurn({ userMessage, destination, dates, interests });
+            // Server reloads slots from Redis via contextRetriever; the user
+            // message itself carries the form values, FollowUp's LLM extracts
+            // and writes them. No need to ship destination/dates/interests
+            // back as state.
+            stream.submitTurn({ userMessage });
         },
         [stream],
     );
@@ -132,20 +137,20 @@ export function App() {
             const res = await fetch('/api/user/save-trip', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, tripId: stream.sessionId }),
+                body: JSON.stringify({ userId, tripId: stream.tripId }),
             });
             if (res.ok) setSavedAt(new Date().toLocaleTimeString());
         } finally {
             setSaving(false);
         }
-    }, [pickedPois.length, stream.sessionId, userId]);
+    }, [pickedPois.length, stream.tripId, userId]);
 
     /** Reset the working trip slot — clears trip-store HASH + AMS working memory. */
     const handleReset = useCallback(async () => {
         await fetch('/api/user/reset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, sessionId: stream.sessionId }),
+            body: JSON.stringify({ userId, tripId: stream.tripId }),
         });
         stream.resetCanvas();
         setSavedAt(null);
@@ -169,11 +174,7 @@ export function App() {
                 // Best-effort rehydrate: replay user's first message to refetch the candidates
                 const firstUser = data.conversationHistory.find((message) => message.role === 'user');
                 if (firstUser) {
-                    await stream.submitTurn({
-                        userMessage: firstUser.content,
-                        destination: data.trip.city,
-                        dates: data.trip.dates,
-                    });
+                    await stream.submitTurn({ userMessage: firstUser.content });
                 }
                 stream.setPickedPois(data.trip.pickedPois);
             } catch (err) {
@@ -287,6 +288,11 @@ export function App() {
                             Error: {stream.error}
                         </div>
                     )}
+                    <TripHeaderCard
+                        destination={stream.destination}
+                        dates={stream.dates}
+                        interests={stream.interests}
+                    />
                     {stream.weather && <WeatherCard weather={stream.weather} />}
                     {stream.pois.length > 0 && (
                         <>

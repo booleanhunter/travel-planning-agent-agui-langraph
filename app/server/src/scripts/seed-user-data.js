@@ -56,7 +56,7 @@ async function writeTrip(redis, userId, trip, pickedPois) {
     await redis.hSet(tripKey, {
         tripId: trip.tripId,
         status: 'completed',
-        city: trip.city,
+        destination: trip.destination ?? trip.city,
         startDate: trip.dates.start,
         endDate: trip.dates.end,
         interests: JSON.stringify(trip.interests ?? []),
@@ -106,7 +106,7 @@ function tripSummaryMemory(userId, trip, picks) {
     return {
         id: `${userId}:${trip.tripId}`,
         user_id: userId,
-        topics: ['trip_history', trip.city, ...trip.interests],
+        topics: ['trip_history', trip.destination ?? trip.city, ...trip.interests],
         entities: picks.map((poi) => sanitizeEntity(poi.name)),
         text: trip.summary,
     };

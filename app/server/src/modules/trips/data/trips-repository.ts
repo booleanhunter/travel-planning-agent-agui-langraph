@@ -6,8 +6,6 @@
  * Listing happens by KEYS pattern scan + per-hash status filter — no
  * separate index SETs. For our scale (<<1000 trips per user) this is
  * trivially fast and keeps the data model to one structure per concept.
- *
- * Convention: tripId == sessionId (one trip per session in v1).
  */
 
 import { getRedis } from '#lib/redis.js';
@@ -15,7 +13,7 @@ import type { POI, City } from '#modules/places/types.js';
 import type { PastTrip } from '../types.js';
 
 interface TripDraftUpsert {
-    city?: City;
+    destination?: City;
     startDate?: string;
     endDate?: string;
     interests?: string[];
@@ -25,9 +23,9 @@ const tripKey = (userId: string, tripId: string) => `user:${userId}:trip:${tripI
 const tripKeyPrefix = (userId: string) => `user:${userId}:trip:`;
 
 /**
- * Idempotently ensure a draft trip record exists for this session, and merge
- * in any newly known fields (city, dates) on each call. Safe to call from
- * TravelAgent on every turn.
+ * Idempotently ensure a draft trip record exists for this user/tripId, and
+ * merge in any newly known fields on each call. Safe to call from
+ * `followUp` on every turn.
  */
 export async function ensureTripDraft(
     userId: string,
@@ -49,7 +47,7 @@ export async function ensureTripDraft(
         baseUpsert.pickedPois = '[]';
         baseUpsert.interests = '[]';
     }
-    if (fields.city) baseUpsert.city = fields.city;
+    if (fields.destination) baseUpsert.destination = fields.destination;
     if (fields.startDate) baseUpsert.startDate = fields.startDate;
     if (fields.endDate) baseUpsert.endDate = fields.endDate;
     if (fields.interests?.length) baseUpsert.interests = JSON.stringify(fields.interests);
@@ -65,7 +63,6 @@ export async function updateTripPickedPois(
 ): Promise<void> {
     const redis = await getRedis();
     const now = new Date().toISOString();
-    // Ensure the record exists before patching (no-op if it does).
     await ensureTripDraft(userId, tripId);
     await redis.hSet(tripKey(userId, tripId), {
         pickedPois: JSON.stringify(pickedPois),
@@ -91,9 +88,9 @@ export async function markTripComplete(userId: string, tripId: string): Promise<
 /** Read a single trip. Returns null if not found. */
 export async function getTrip(userId: string, tripId: string): Promise<PastTrip | null> {
     const redis = await getRedis();
-    const h = await redis.hGetAll(tripKey(userId, tripId));
-    if (!h || !Object.keys(h).length) return null;
-    return hashToTrip(tripId, h);
+    const hash = await redis.hGetAll(tripKey(userId, tripId));
+    if (!hash || !Object.keys(hash).length) return null;
+    return hashToTrip(tripId, hash);
 }
 
 /**
@@ -139,8 +136,7 @@ function hashToTrip(tripId: string, hash: Record<string, string>): PastTrip | nu
     const dates = hash.startDate && hash.endDate ? { start: hash.startDate, end: hash.endDate } : undefined;
     return {
         tripId,
-        sessionId: tripId, // tripId == sessionId in v1
-        city: (hash.city ?? 'bangalore') as City,
+        destination: (hash.destination ?? 'bangalore') as City,
         dates,
         interests,
         pickedPois,

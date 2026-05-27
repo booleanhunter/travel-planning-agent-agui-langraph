@@ -26,7 +26,7 @@ export function makeUpdateItineraryTool(state: AgentStateType, onApplied: (picks
         async ({ pickedPois }: { pickedPois: Array<{ poiId: string; name: string }> }) => {
             const enriched = await commitPicks(
                 state.userId,
-                state.sessionId,
+                state.tripId,
                 pickedPois,
                 state.pois,
                 state.pickedPois,
@@ -262,7 +262,7 @@ export function makeSaveTripToCalendarTool(
                     return {
                         saved: true,
                         eventLink: event.htmlLink,
-                        city: trip.city,
+                        destination: trip.destination,
                         dates: trip.dates,
                     };
                 } catch (err) {
@@ -287,7 +287,7 @@ export function makeSaveTripToCalendarTool(
                 url: startUrl,
                 elicitationId,
                 message:
-                    `To save "Trip to ${trip.city}" to your Google Calendar, ` +
+                    `To save "Trip to ${trip.destination}" to your Google Calendar, ` +
                     'sign in with Google to grant calendar permission.',
             });
             return {
@@ -303,7 +303,7 @@ export function makeSaveTripToCalendarTool(
             description:
                 'Save a trip to the user\'s Google Calendar as an all-day event. ' +
                 'Call this when the user asks to save their trip / add it to their calendar. ' +
-                'Pass the tripId — for the current planning session use the user\'s sessionId (typically "newSessionId"); ' +
+                'Pass the tripId — for the current planning slot, this is the fixed value "newTripId"; ' +
                 'for past trips use the seeded id (e.g. "seed-ashwin-bangalore"). ' +
                 'If we have no Google access token cached, the tool will request OAuth via URL-mode elicit; ' +
                 'in that case it returns { saved: false, needsAuth: true } and the user has to complete the ' +
@@ -312,7 +312,7 @@ export function makeSaveTripToCalendarTool(
                 tripId: z
                     .string()
                     .describe(
-                        'The trip to save. For the current session, this is the user\'s sessionId.',
+                        'The trip to save (the user\'s working planning slot uses tripId "newTripId").',
                     ),
             }),
         },

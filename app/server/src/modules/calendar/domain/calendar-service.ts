@@ -48,7 +48,7 @@ export async function createEventForTrip(
     if (!trip.dates) {
         throw new Error('Cannot create calendar event — trip has no dates.');
     }
-    const displayCity = CITY_DISPLAY_NAMES[trip.city] ?? trip.city;
+    const displayCity = CITY_DISPLAY_NAMES[trip.destination] ?? trip.destination;
     const body = {
         summary: `Trip to ${displayCity}`,
         description: buildDescription(trip),

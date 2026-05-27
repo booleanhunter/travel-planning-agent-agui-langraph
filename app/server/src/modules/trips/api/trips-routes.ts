@@ -43,7 +43,7 @@ router.post('/load-trip', async (req, res) => {
             res.status(404).json({ error: 'trip not found' });
             return;
         }
-        const conv = await getConversation(trip.sessionId);
+        const conv = await getConversation(trip.tripId);
         res.json({
             trip,
             conversationHistory: conv?.messages ?? [],
@@ -84,21 +84,21 @@ router.post('/save-trip', async (req, res) => {
 });
 
 /**
- * POST /api/user/reset { userId?, sessionId }
- * Clears the working planning slot for this user/session: deletes the
+ * POST /api/user/reset { userId?, tripId }
+ * Clears the working planning slot for this user/trip: deletes the
  * trip-store HASH and wipes AMS working memory. Past trips remain.
  */
 router.post('/reset', async (req, res) => {
-    const { userId = 'ashwin', sessionId } = req.body as {
+    const { userId = 'ashwin', tripId } = req.body as {
         userId?: string;
-        sessionId: string;
+        tripId: string;
     };
-    if (!sessionId) {
-        res.status(400).json({ error: 'sessionId is required' });
+    if (!tripId) {
+        res.status(400).json({ error: 'tripId is required' });
         return;
     }
     try {
-        await resetWorkingTrip(userId, sessionId);
+        await resetWorkingTrip(userId, tripId);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });

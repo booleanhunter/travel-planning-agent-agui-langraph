@@ -62,8 +62,8 @@ export async function searchUserPreferences(userId: string): Promise<UserPrefere
 /**
  * Fetch the conversation transcript for a session, if any.
  */
-export async function getConversation(sessionId: string): Promise<WorkingMemoryResponse | null> {
-    return getAms().getWorkingMemory(sessionId);
+export async function getConversation(tripId: string): Promise<WorkingMemoryResponse | null> {
+    return getAms().getWorkingMemory(tripId);
 }
 
 /**
@@ -78,8 +78,8 @@ export async function saveLongTermMemory(records: MemoryRecord[]): Promise<void>
  * Wipe the working memory for a session. Used by the Reset flow so the
  * conversation history doesn't bleed into the user's next planning attempt.
  */
-export async function deleteWorkingMemory(sessionId: string): Promise<void> {
-    await getAms().deleteWorkingMemory(sessionId);
+export async function deleteWorkingMemory(tripId: string): Promise<void> {
+    await getAms().deleteWorkingMemory(tripId);
 }
 
 /**
@@ -87,21 +87,21 @@ export async function deleteWorkingMemory(sessionId: string): Promise<void> {
  * Fire-and-forget at the call site.
  */
 export async function appendTurn(
-    sessionId: string,
+    tripId: string,
     userId: string,
     messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
 ): Promise<void> {
     const ams = getAms();
-    const existing = await ams.getOrCreateWorkingMemory(sessionId, { userId });
-    await ams.putWorkingMemory(sessionId, {
-        session_id: sessionId,
+    const existing = await ams.getOrCreateWorkingMemory(tripId, { userId });
+    await ams.putWorkingMemory(tripId, {
+        session_id: tripId,
         user_id: userId,
         messages: [
             ...(existing.messages ?? []),
             ...messages.map((message, index) => ({
                 role: message.role,
                 content: message.content,
-                id: `${sessionId}-${Date.now()}-${index}`,
+                id: `${tripId}-${Date.now()}-${index}`,
             })),
         ],
     });

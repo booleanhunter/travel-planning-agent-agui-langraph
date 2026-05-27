@@ -1,13 +1,29 @@
+/**
+ * Last graph node — synthesize the turn.
+ *
+ * One LLM call (structured output) does four things in parallel:
+ *   - Extract slot values from the full conversation (user message + agent
+ *     reply this turn + prior history). Replaces the brittle tool-call-args
+ *     inspection we had before.
+ *   - Decide whether the user needs more info via a chip card (elicit).
+ *   - List which fields the chip card should ask for.
+ *   - Generate 2-4 user-voice followup suggestion chips.
+ *
+ * Then persist any new slot values to the Redis trip-store (`ensureDraft`)
+ * and append this turn to AMS working memory. The persistence write is the
+ * counterpart to `contextRetriever`'s read.
+ */
+
 import { z } from 'zod';
-import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
 import { getChatModel } from '#modules/ai/helpers/llm.js';
 import { appendTurn } from '#modules/user/domain/user-service.js';
 import { ensureDraft } from '#modules/trips/domain/trips-service.js';
 import { CitySchema, CITY_DISPLAY_NAMES, type City } from '#modules/places/types.js';
-import type { AgentStateType, ToolCallRecord } from '../state.js';
+import type { AgentStateType } from '../state.js';
 import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
 
-// ----- Interest options (kept in sync with tools.ts INTEREST_VALUES) -----------------
+// ----- Interest options (kept in sync with tools.ts INTEREST_VALUES) ----------
 
 const INTEREST_OPTIONS = [
     { value: 'food', label: 'Food & restaurants' },
@@ -19,117 +35,45 @@ const INTEREST_OPTIONS = [
     { value: 'culture', label: 'Arts & culture' },
 ];
 
-// ----- Slot derivation from tool-call args ------------------------------------------
+const INTEREST_VALUES = INTEREST_OPTIONS.map((option) => option.value) as [
+    string,
+    ...string[],
+];
 
-interface DerivedSlots {
-    destination?: City;
-    dates?: { start: string; end: string };
-    interests: string[];
-}
+// ----- Structured output schema ----------------------------------------------
 
-function extractSlotsFromToolCalls(toolCalls: ToolCallRecord[], state: AgentStateType): DerivedSlots {
-    // Start from current state, override with this turn's tool-call args.
-    const slots: DerivedSlots = {
-        destination: state.destination,
-        dates: state.dates,
-        interests: state.interests,
-    };
+const FollowUpOutput = z.object({
+    destination: CitySchema.nullable().describe(
+        "Destination city for the trip. Extract from THIS turn's user message, the agent's reply, and prior conversation. Null only if truly unknown.",
+    ),
+    startDate: z
+        .string()
+        .nullable()
+        .describe('Trip start date as ISO YYYY-MM-DD if known; null otherwise.'),
+    endDate: z.string().nullable().describe('Trip end date as ISO YYYY-MM-DD if known; null otherwise.'),
+    interests: z
+        .array(z.enum(INTEREST_VALUES))
+        .describe(
+            'Interest tags from the canonical list. Read from the conversation; empty array if unknown.',
+        ),
+    needsMoreInfo: z
+        .boolean()
+        .describe(
+            'True only if the user is trying to plan/research a trip and important slots are still missing. False if the user just completed an action (commit picks, save trip), asked a question that the agent already answered, or is making small talk.',
+        ),
+    missingFields: z
+        .array(z.enum(['destination', 'dates', 'interests']))
+        .describe(
+            'Which fields to ask for via the chip card. Only populated when needsMoreInfo is true.',
+        ),
+    suggestedActions: z
+        .array(z.string())
+        .describe(
+            "2-4 short user-voice followup chips (e.g. 'What should I pack?', 'Show me more food spots'). Written in first-person — what the user would tap. Empty array if no natural followup.",
+        ),
+});
 
-    for (const toolCall of toolCalls) {
-        const args = toolCall.args ?? {};
-        // Destination flows from any tool that takes a city arg —
-        // searchPois (discovery), getPoiDetails (lookup), getWeather (climate).
-        if (
-            toolCall.name === 'searchPois' ||
-            toolCall.name === 'getPoiDetails' ||
-            toolCall.name === 'getWeather'
-        ) {
-            if (typeof args.city === 'string') slots.destination = args.city as City;
-        }
-        // Interests come only from searchPois (where the LLM passes the
-        // canonical tag list).
-        if (toolCall.name === 'searchPois') {
-            if (Array.isArray(args.interests) && args.interests.length) {
-                slots.interests = args.interests as string[];
-            }
-        }
-        // Dates come only from getWeather (the only tool that takes them).
-        if (toolCall.name === 'getWeather') {
-            const startDate = typeof args.startDate === 'string' ? args.startDate : undefined;
-            const endDate = typeof args.endDate === 'string' ? args.endDate : undefined;
-            if (startDate && endDate) slots.dates = { start: startDate, end: endDate };
-        }
-    }
-
-    return slots;
-}
-
-// ----- Rule-based elicit (no `intent` field; infer from which tools ran) ------------
-
-function fieldsToElicit(
-    toolCalls: ToolCallRecord[],
-    slots: DerivedSlots,
-    userMessage: string,
-): Array<'destination' | 'dates' | 'interests'> {
-    // Two tool categories drive the decision:
-    //   - DISCOVERY (searchPois, getWeather): user is gathering info → may still
-    //     be missing slots the elicit could fill.
-    //   - ACTION (getPoiDetails, updateItinerary, saveTripToCalendar): user is
-    //     past the info-gathering phase — they named places, committed picks,
-    //     or saved the trip. Don't ask "Where to?" after that.
-    const calledSearch = toolCalls.some((toolCall) => toolCall.name === 'searchPois');
-    const calledWeather = toolCalls.some((toolCall) => toolCall.name === 'getWeather');
-    const calledAction = toolCalls.some(
-        (toolCall) =>
-            toolCall.name === 'getPoiDetails' ||
-            toolCall.name === 'updateItinerary' ||
-            toolCall.name === 'saveTripToCalendar',
-    );
-
-    // Short-circuit: only action tools fired this turn → user is committing,
-    // not exploring. No elicit, no matter what's missing from the slots.
-    if (calledAction && !calledSearch && !calledWeather) {
-        return [];
-    }
-
-    const missingDest = !slots.destination;
-    const missingDates = !slots.dates;
-    const missingInterests = !slots.interests.length;
-
-    const fields: Array<'destination' | 'dates' | 'interests'> = [];
-
-    // No tool calls at all + missing destination → user wants to plan but
-    // hasn't said where. Treat as full planning intent and ask for everything.
-    if (!calledSearch && !calledWeather && !calledAction && missingDest) {
-        // Light heuristic: if the user used a planning verb, also ask for dates + interests.
-        const planningVerbs = /\b(plan|trip|itinerary|visit|travel|go to|going to)\b/i;
-        if (planningVerbs.test(userMessage)) {
-            fields.push('destination');
-            if (missingDates) fields.push('dates');
-            if (missingInterests) fields.push('interests');
-        } else {
-            fields.push('destination');
-        }
-        return fields;
-    }
-
-    // Discovery tool calls happened → narrow elicit to what those tools imply.
-    if (calledSearch && calledWeather) {
-        // Likely full planning — ask for anything still missing.
-        if (missingDest) fields.push('destination');
-        if (missingDates) fields.push('dates');
-        if (missingInterests) fields.push('interests');
-    } else if (calledSearch) {
-        // Researching — only destination + interests matter.
-        if (missingDest) fields.push('destination');
-        if (missingInterests) fields.push('interests');
-    } else if (calledWeather) {
-        // Trip prep — destination + dates.
-        if (missingDest) fields.push('destination');
-        if (missingDates) fields.push('dates');
-    }
-    return fields;
-}
+// ----- Elicit construction (rule-based JSON Schema) --------------------------
 
 function buildElicit(
     fields: Array<'destination' | 'dates' | 'interests'>,
@@ -151,7 +95,6 @@ function buildElicit(
         required.push('destination');
     }
     if (fields.includes('dates')) {
-        // MCP forbids nested objects in requestedSchema — flat fields.
         properties.startDate = {
             type: 'string',
             title: 'Start date',
@@ -189,120 +132,128 @@ function buildElicit(
     };
 }
 
-// ----- Small LLM call for suggestedActions ------------------------------------------
+// ----- System prompt ---------------------------------------------------------
 
-const SuggestionsOutput = z.object({
-    suggestedActions: z
-        .array(z.string())
-        .describe(
-            "Short follow-up chips the USER might tap to send as their next message — written in the user's first-person voice. " +
-                'Each chip should read like something the user would naturally type or click. ' +
-                'Good examples: "What should I pack?", "Make it more relaxed", "Save this trip", "Show me only cultural spots", "Plan a 3-day itinerary". ' +
-                'Bad examples (do NOT use these patterns): "Share your interests", "Request places", "Pick a destination", "Get packing tips" — these are imperatives directed at the user, not user-voiced prompts. ' +
-                'Return an empty array if no natural next step exists.',
-        ),
-});
+function buildSystemPrompt(state: AgentStateType): string {
+    const lines: string[] = [
+        'You are the synthesis step after a travel agent has run for the current turn.',
+        "Your job is to extract structured slot values from the full conversation, decide whether the agent should ask for more info via a chip card, and propose user-voice followup chips.",
+        '',
+        'Decision rules for needsMoreInfo:',
+        '- TRUE when the user is trying to plan/research but key slots are unset and the agent has not already gathered them.',
+        '- FALSE when the user just executed an action (named places to add, saved to calendar) or made small talk or asked a question the agent already answered.',
+        '- FALSE if the agent\'s reply just answered a research question that did not need slot info.',
+        '',
+        'Slot extraction:',
+        '- destination: one of 33 supported city ids (lowercase, hyphenated multi-word: e.g. "bangalore", "new-york"). Look in the user message, agent reply, and prior history.',
+        '- dates: ISO YYYY-MM-DD start + end. Resolve relative phrases ("next month", "in October") against today.',
+        '- interests: canonical tags from {food, landmarks, offbeat, slow, outdoors, nightlife, culture}.',
+        '',
+        'suggestedActions: 2-4 short first-person chips the USER might tap next ("Make it more relaxed", "What should I pack?", "Show me cultural spots"). Empty array if no natural followup.',
+        '',
+        `Today is ${new Date().toISOString().split('T')[0]}.`,
+    ];
 
-function buildSuggestionsPrompt(
-    slots: DerivedSlots,
-    state: AgentStateType,
-    response: string,
-): string {
+    // Carry-in context — what's already known from contextRetriever's hydration.
     const ctx: string[] = [];
-    if (slots.destination)
-        ctx.push(`Destination: ${CITY_DISPLAY_NAMES[slots.destination] ?? slots.destination}`);
-    if (slots.dates) ctx.push(`Dates: ${slots.dates.start} → ${slots.dates.end}`);
-    if (slots.interests.length) ctx.push(`Interests: ${slots.interests.join(', ')}`);
-    if (state.weather)
-        ctx.push(
-            `Weather: ${state.weather.condition} (${state.weather.high}°/${state.weather.low}°C)`,
-        );
-    ctx.push(`Candidates this turn: ${state.pois.length}`);
-    ctx.push(`Currently picked: ${state.pickedPois.length}`);
+    if (state.destination) ctx.push(`destination=${state.destination}`);
+    if (state.dates) ctx.push(`dates=${state.dates.start} to ${state.dates.end}`);
+    if (state.interests.length) ctx.push(`interests=[${state.interests.join(', ')}]`);
+    if (state.pickedPois.length) ctx.push(`picked=${state.pickedPois.length} places`);
+    if (state.preferences?.recurringInterests?.length) {
+        ctx.push(`memory.recurringInterests=[${state.preferences.recurringInterests.join(', ')}]`);
+    }
+    if (ctx.length) {
+        lines.push('', `Already-known context (carry forward unless this turn changed it): ${ctx.join('; ')}.`);
+    }
 
-    return [
-        'Generate 2-4 short follow-up chips a user might tap next.',
-        'Write them in the user\'s first-person voice — what THEY would type or click.',
-        'Build on the agent reply just shown — do not contradict it or repeat info already given.',
-        'Return an empty array if no natural follow-up exists.',
-        '',
-        'Trip context:',
-        ...ctx.map((line) => `  - ${line}`),
-        '',
-        `Agent reply: ${response || '(no reply)'}`,
-    ].join('\n');
+    return lines.join('\n');
 }
 
-// ----- The node ----------------------------------------------------------------------
+// ----- The node --------------------------------------------------------------
 
 export async function followUp(state: AgentStateType): Promise<Partial<AgentStateType>> {
     console.log(
-        `\n💬 [follow-up] entry — toolCalls=${state.toolCalls.length} destination=${state.destination ?? '—'} pois=${state.pois.length} weather=${state.weather ? 'yes' : 'no'} picked=${state.pickedPois.length}`,
+        `\n💬 [follow-up] entry — destination=${state.destination ?? '—'} pois=${state.pois.length} picked=${state.pickedPois.length} priorMessages=${state.conversationHistory.length}`,
     );
 
-    // 1. Extract slots from TravelAgent's tool-call args.
-    const slots = extractSlotsFromToolCalls(state.toolCalls, state);
+    // Build the conversation the LLM sees: history + this turn's user message
+    // + the agent's reply (if any).
+    const priorMessages = state.conversationHistory.map((message) =>
+        message.role === 'user'
+            ? new HumanMessage(message.content)
+            : new AIMessage(message.content),
+    );
+    const messages = [
+        new SystemMessage(buildSystemPrompt(state)),
+        ...priorMessages,
+        new HumanMessage(state.userMessage),
+        ...(state.response ? [new AIMessage(state.response)] : []),
+    ];
+
+    const out = await getChatModel()
+        .withStructuredOutput(FollowUpOutput, { name: 'follow_up' })
+        .invoke(messages)
+        .catch((err) => {
+            console.warn('[follow-up] LLM call failed:', (err as Error).message);
+            return {
+                destination: null,
+                startDate: null,
+                endDate: null,
+                interests: [] as string[],
+                needsMoreInfo: false,
+                missingFields: [] as Array<'destination' | 'dates' | 'interests'>,
+                suggestedActions: [] as string[],
+            };
+        });
+
+    // Merge: LLM extraction wins for any field it set; otherwise carry from
+    // state (which was hydrated by contextRetriever).
+    const destination = (out.destination ?? state.destination) as City | undefined;
+    const dates = out.startDate && out.endDate
+        ? { start: out.startDate, end: out.endDate }
+        : state.dates;
+    const interests = out.interests.length ? out.interests : state.interests;
+
     console.log(
-        `[follow-up] slots — destination=${slots.destination ?? '—'} dates=${slots.dates ? `${slots.dates.start}→${slots.dates.end}` : '—'} interests=[${slots.interests.join(',')}]`,
+        `[follow-up] slots — destination=${destination ?? '—'} dates=${dates ? `${dates.start}→${dates.end}` : '—'} interests=[${interests.join(',')}] needsMoreInfo=${out.needsMoreInfo}`,
     );
 
-    // 2. Persist the working trip draft to Redis whenever we know the destination.
-    //    Idempotent — safe to call every turn.
-    if (slots.destination) {
-        await ensureDraft(state.userId, state.sessionId, {
-            city: slots.destination,
-            startDate: slots.dates?.start,
-            endDate: slots.dates?.end,
-            interests: slots.interests,
+    // Persist the working trip draft to Redis (idempotent).
+    if (destination) {
+        await ensureDraft(state.userId, state.tripId, {
+            destination,
+            startDate: dates?.start,
+            endDate: dates?.end,
+            interests,
         }).catch((err) =>
             console.error('[follow-up] ensureDraft failed:', (err as Error).message),
         );
     }
 
-    // 3. Decide if we need to elicit anything from the user.
-    //    If TravelAgent already set a URL-mode elicit (e.g. saveTripToCalendar
-    //    needs OAuth), keep that and don't override with a rule-based form
-    //    elicit. URL-mode takes priority because the user can't proceed
-    //    without that out-of-band flow.
+    // Elicit: URL-mode set by TravelAgent takes priority (don't override with
+    // a rule-based form elicit). Otherwise honor the LLM's needsMoreInfo
+    // decision, unless the user explicitly declined this turn.
     let elicit: ElicitSpec | undefined = state.elicit;
-    if (!elicit && !state.userDeclinedElicit) {
-        const fieldsNeeded = fieldsToElicit(state.toolCalls, slots, state.userMessage);
-        elicit = buildElicit(fieldsNeeded, state.preferences);
+    if (!elicit && out.needsMoreInfo && !state.userDeclinedElicit) {
+        elicit = buildElicit(out.missingFields, state.preferences);
         if (elicit) {
-            console.log(`[follow-up] elicit — fields=[${fieldsNeeded.join(',')}]`);
+            console.log(`[follow-up] elicit — fields=[${out.missingFields.join(',')}]`);
         }
-    } else if (elicit?.mode === 'url') {
-        console.log(`[follow-up] keeping URL-mode elicit set by TravelAgent`);
     }
 
-    // 4. One small LLM call for suggestedActions (always — the chips help the
-    //    user even when an elicit is also on screen).
-    const suggestionsModel = getChatModel().withStructuredOutput(SuggestionsOutput, {
-        name: 'suggested_actions',
-    });
-    const out = await suggestionsModel
-        .invoke([
-            new SystemMessage(buildSuggestionsPrompt(slots, state, state.response ?? '')),
-            new HumanMessage(state.userMessage),
-        ])
-        .catch((err) => {
-            console.warn('[follow-up] suggestions failed:', (err as Error).message);
-            return { suggestedActions: [] as string[] };
-        });
-    console.log(`[follow-up] suggestedActions=[${out.suggestedActions.join(',')}]`);
-
-    // 5. Persist this turn to AMS working memory (fire-and-forget).
+    // Persist this turn's user + assistant message to AMS working memory.
     if (state.response) {
-        appendTurn(state.sessionId, state.userId, [
+        appendTurn(state.tripId, state.userId, [
             { role: 'user', content: state.userMessage },
             { role: 'assistant', content: state.response },
         ]).catch((err) => console.error('[follow-up] appendTurn failed:', (err as Error).message));
     }
 
     return {
-        destination: slots.destination,
-        dates: slots.dates,
-        interests: slots.interests,
+        destination,
+        dates,
+        interests,
         suggestedActions: out.suggestedActions,
         elicit,
     };

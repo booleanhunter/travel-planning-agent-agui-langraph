@@ -12,22 +12,22 @@ export function getPreferences(userId: string): Promise<UserPreferences | undefi
     return repoSearchUserPreferences(userId);
 }
 
-export function getConversation(sessionId: string): Promise<WorkingMemoryResponse | null> {
-    return repoGetConversation(sessionId);
+export function getConversation(tripId: string): Promise<WorkingMemoryResponse | null> {
+    return repoGetConversation(tripId);
 }
 
 export function appendTurn(
-    sessionId: string,
+    tripId: string,
     userId: string,
     messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
 ): Promise<void> {
-    return repoAppendTurn(sessionId, userId, messages);
+    return repoAppendTurn(tripId, userId, messages);
 }
 
 export function saveLongTermMemory(records: MemoryRecord[]): Promise<void> {
     return repoSaveLongTermMemory(records);
 }
 
-export function deleteWorkingMemory(sessionId: string): Promise<void> {
-    return repoDeleteWorkingMemory(sessionId);
+export function deleteWorkingMemory(tripId: string): Promise<void> {
+    return repoDeleteWorkingMemory(tripId);
 }

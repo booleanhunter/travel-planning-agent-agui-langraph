@@ -14,10 +14,6 @@ interface ConversationEntry {
 
 interface AgentTurnInput {
     userMessage: string;
-    destination?: City;
-    dates?: { start: string; end: string };
-    interests?: string[];
-    pickedPois?: POI[];
     /** One-shot: tells server this turn is a decline of the prior elicit. */
     userDeclinedElicit?: boolean;
 }
@@ -33,6 +29,14 @@ interface AgentStream {
     conversation: ConversationEntry[];
     pickedPois: POI[];
     setPickedPois: React.Dispatch<React.SetStateAction<POI[]>>;
+    /**
+     * Tracked from streaming snapshots for display in the UI (TripHeaderCard
+     * pills). Server is the source of truth; these reflect whatever the
+     * server has emitted via STATE_SNAPSHOT events.
+     */
+    destination: City | null;
+    dates: { start: string; end: string } | null;
+    interests: string[];
     submitTurn: (input: AgentTurnInput) => Promise<void>;
     /** Cancel/dismiss the current elicit locally — no server call. */
     clearElicit: () => void;
@@ -56,17 +60,17 @@ function readUserIdFromUrl(): string {
 }
 
 /**
- * sessionId is fixed per user. AMS conversation + trip-store working slot
- * persist across page reloads. Reset (via the memory drawer) wipes them.
+ * tripId is fixed per user. AMS conversation + trip-store working slot persist
+ * across page reloads. Reset (via the memory drawer) wipes them.
  */
-const SESSION_ID = 'newSessionId';
+const TRIP_ID = 'newTripId';
 
 export function useAgentStream(): AgentStream & {
     userId: string;
-    sessionId: string;
+    tripId: string;
 } {
     const [userId] = useState<string>(() => readUserIdFromUrl());
-    const sessionId = SESSION_ID;
+    const tripId = TRIP_ID;
     const agentRef = useRef<HttpAgent | null>(null);
 
     const [pois, setPois] = useState<POI[]>([]);
@@ -79,15 +83,14 @@ export function useAgentStream(): AgentStream & {
     const [conversation, setConversation] = useState<ConversationEntry[]>([]);
     const [pickedPois, setPickedPois] = useState<POI[]>([]);
     const [pendingTurnMessage, setPendingTurnMessage] = useState<string | null>(null);
-    // Tracks the userMessage of the in-flight turn so we can capture it as
-    // the pendingTurnMessage if that turn ends up emitting a URL-mode elicit.
     const inFlightMessageRef = useRef<string | null>(null);
-    // Resolved slots from RouteIntent — carried forward to subsequent turns
-    const [resolvedSlots, setResolvedSlots] = useState<{
-        destination?: City;
-        dates?: { start: string; end: string };
-        interests?: string[];
-    }>({});
+
+    // Slot state — populated from server streaming snapshots, used for the
+    // TripHeaderCard pills. NOT sent back to the server (server reads from
+    // Redis trip-store via contextRetriever).
+    const [destination, setDestination] = useState<City | null>(null);
+    const [dates, setDates] = useState<{ start: string; end: string } | null>(null);
+    const [interests, setInterests] = useState<string[]>([]);
 
     useEffect(() => {
         agentRef.current = new HttpAgent({ url: '/api/chat' });
@@ -99,8 +102,6 @@ export function useAgentStream(): AgentStream & {
         if (delta.elicit !== undefined) {
             const newElicit = delta.elicit as ElicitSpec | null;
             setElicit(newElicit);
-            // Capture the in-flight userMessage when a URL-mode elicit arrives,
-            // so we can auto-resubmit after the OAuth callback completes.
             if (newElicit?.mode === 'url' && inFlightMessageRef.current) {
                 setPendingTurnMessage(inFlightMessageRef.current);
             }
@@ -108,18 +109,11 @@ export function useAgentStream(): AgentStream & {
         if (delta.response !== undefined) setResponse(delta.response as string);
         if (delta.suggestedActions !== undefined)
             setSuggestedActions(delta.suggestedActions as string[]);
-        if (delta.destination !== undefined)
-            setResolvedSlots((prev) => ({ ...prev, destination: delta.destination as City }));
+        if (delta.destination !== undefined) setDestination(delta.destination as City);
         if (delta.dates !== undefined)
-            setResolvedSlots((prev) => ({
-                ...prev,
-                dates: delta.dates as { start: string; end: string },
-            }));
-        if (delta.interests !== undefined)
-            setResolvedSlots((prev) => ({ ...prev, interests: delta.interests as string[] }));
+            setDates(delta.dates as { start: string; end: string });
+        if (delta.interests !== undefined) setInterests(delta.interests as string[]);
         if (Array.isArray(delta.pickedPois)) setPickedPois(delta.pickedPois as POI[]);
-        // Note: the response → conversation push happens in the subscriber so we can
-        // associate the message with the current turnId.
     }, []);
 
     const clearElicit = useCallback(() => {
@@ -135,8 +129,10 @@ export function useAgentStream(): AgentStream & {
         setSuggestedActions([]);
         setConversation([]);
         setPickedPois([]);
+        setDestination(null);
+        setDates(null);
+        setInterests([]);
         setError(null);
-        setResolvedSlots({});
         setPendingTurnMessage(null);
     }, []);
 
@@ -145,8 +141,6 @@ export function useAgentStream(): AgentStream & {
             const agent = agentRef.current;
             if (!agent) return;
 
-            // Track the in-flight message so applyDelta can capture it as the
-            // pendingTurnMessage if this turn returns a URL-mode elicit.
             inFlightMessageRef.current = input.userMessage;
 
             setRunning(true);
@@ -160,19 +154,12 @@ export function useAgentStream(): AgentStream & {
                 { role: 'user', content: input.userMessage, dots: {} },
             ]);
 
-            // Start from previously resolved slots, then let input override
-            const stateToSend: Record<string, unknown> = {
-                userId,
-                ...resolvedSlots,
-            };
-            if (input.destination) stateToSend.destination = input.destination;
-            if (input.dates) stateToSend.dates = input.dates;
-            if (input.interests?.length) stateToSend.interests = input.interests;
-            const effectivePicked = input.pickedPois ?? pickedPois;
-            if (effectivePicked.length) stateToSend.pickedPois = effectivePicked;
+            // No slot fields — server reloads them from Redis trip-store via
+            // contextRetriever. Just identity + one-shot flags.
+            const stateToSend: Record<string, unknown> = { userId };
             if (input.userDeclinedElicit) stateToSend.userDeclinedElicit = true;
 
-            agent.threadId = sessionId;
+            agent.threadId = tripId;
             agent.setMessages([
                 ...conversation.map((message) => ({
                     id: `${Date.now()}`,
@@ -226,7 +213,7 @@ export function useAgentStream(): AgentStream & {
                 setRunning(false);
             }
         },
-        [applyDelta, conversation, sessionId, pickedPois, resolvedSlots],
+        [applyDelta, conversation, tripId, userId],
     );
 
     return {
@@ -240,11 +227,14 @@ export function useAgentStream(): AgentStream & {
         conversation,
         pickedPois,
         setPickedPois,
+        destination,
+        dates,
+        interests,
         submitTurn,
         clearElicit,
         resetCanvas,
         pendingTurnMessage,
         userId,
-        sessionId,
+        tripId,
     };
 }
