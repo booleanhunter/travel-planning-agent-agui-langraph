@@ -1,10 +1,12 @@
 services:
   redis:
-    image: redis/redis-stack:latest
+    # Redis 8+ ships JSON, Search, Vector, TimeSeries, Bloom as core modules,
+    # so the old redis-stack image is no longer needed. (redis-stack:latest
+    # is still pinned to Redis 7.4 and lacks HSETEX, which AMS requires.)
+    image: redis:latest
     container_name: trip-itinerary-redis
     ports:
       - "6379:6379"
-      - "8001:8001"  # RedisInsight UI — useful for showing memory state on stage
     volumes:
       - redis-data:/data
     healthcheck:
@@ -13,35 +15,57 @@ services:
       timeout: 3s
       retries: 5
 
+  # AMS env block — shared between the API server and the docket worker.
+  # YAML anchor (`x-ams-env`) defines it once; both services reference it.
   agent-memory-server:
     image: redislabs/agent-memory-server:latest
     container_name: trip-itinerary-memory-server
     ports:
       - "8000:8000"
-    environment:
+    environment: &ams-env
       REDIS_URL: redis://redis:6379
+      # Docket (the task queue AMS uses for background extraction/compaction)
+      # reads its own env var, not REDIS_URL. Without this the standalone
+      # `docket worker` defaults to redis://localhost and can't reach the
+      # `redis` service in the compose network.
+      DOCKET_URL: redis://redis:6379
+      # AMS schedules its tasks into a docket named "memory-server" (not the
+      # docket-default "docket"). The worker must point at the same name or
+      # it sits idle while extraction tasks pile up under memory-server:*.
+      DOCKET_NAME: memory-server
       LLM_PROVIDER: openai
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       AUTH_DISABLED: "true"  # local dev only — enable real auth for any hosted version
       # Auto-extract structured long-term memories from working-memory messages.
-      # Defaults to true in the AMS image today; we set explicitly to document
-      # intent + protect against image-default drift on future updates.
       ENABLE_DISCRETE_MEMORY_EXTRACTION: "true"
       ENABLE_TOPIC_EXTRACTION: "true"
       ENABLE_NER: "true"
-      # Use the cheaper model for extraction — ~10x lower per-call cost, plenty
-      # of quality for our demo's preference extraction.
       GENERATION_MODEL: "gpt-4o-mini"
-      # Keep all memories forever during the demo — no expiry.
+      # AMS uses a separate "fast" model for topic/NER extraction. Its default
+      # (gpt-5-mini) requires an OpenAI org-verified account; pinning to
+      # gpt-4o-mini matches the generation model and avoids the 404.
+      FAST_MODEL: "gpt-4o-mini"
+      SLOW_MODEL: "gpt-4o-mini"
       FORGETTING_ENABLED: "false"
-      # Compact (dedup + merge similar memories) every minute. The demo
-      # benefits from snappy reconciliation — by the time a presenter says
-      # "watch the agent learn", duplicate-ish preference memories from a
-      # back-and-forth conversation have already collapsed.
       COMPACTION_EVERY_MINUTES: "1"
     depends_on:
       redis:
         condition: service_healthy
+
+  # Docket worker — separately runs the background tasks the API server
+  # schedules (discrete memory extraction, topic extraction, NER, compaction,
+  # forgetting). Without this, extractions stay queued forever and
+  # `discrete_memory_extracted` on every message stays "f".
+  agent-memory-worker:
+    image: redislabs/agent-memory-server:latest
+    container_name: trip-itinerary-memory-worker
+    command: ["docket", "worker", "--tasks", "agent_memory_server.docket_tasks:task_collection"]
+    environment: *ams-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      agent-memory-server:
+        condition: service_started
 
 volumes:
   redis-data:
