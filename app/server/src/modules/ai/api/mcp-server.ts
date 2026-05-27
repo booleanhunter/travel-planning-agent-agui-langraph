@@ -87,17 +87,17 @@ function buildToolResult(result: AgentStateType) {
             dates: result.dates,
             interests: result.interests,
             weather: result.weather,
-            pois: result.pois.map((p) => ({
-                id: p.id,
-                name: p.name,
+            pois: result.pois.map((poi) => ({
+                id: poi.id,
+                name: poi.name,
                 description:
-                    p.description.length > 140
-                        ? p.description.slice(0, 137) + '…'
-                        : p.description,
-                rating: p.rating,
-                category: p.category,
+                    poi.description.length > 140
+                        ? poi.description.slice(0, 137) + '…'
+                        : poi.description,
+                rating: poi.rating,
+                category: poi.category,
             })),
-            pickedPois: result.pickedPois.map((p) => ({ id: p.id, name: p.name })),
+            pickedPois: result.pickedPois.map((poi) => ({ id: poi.id, name: poi.name })),
             suggestedActions: result.suggestedActions,
             response: result.response ?? '',
         },
@@ -187,7 +187,7 @@ export function createMcpServer(): McpServer {
             // Loop: drive the planner; if it returns an elicit, ask the MCP client
             // via elicitInput and merge the response into state for the next round.
             // Cap iterations to avoid runaway loops if the agent keeps re-eliciting.
-            for (let i = 0; i < 5; i++) {
+            for (let iteration = 0; iteration < 5; iteration++) {
                 const result = await streamPlannerTurn(
                     {
                         userId: USER_ID,

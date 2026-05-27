@@ -59,9 +59,9 @@ export async function streamPlannerTurn(
             getPreferences(input.userId).catch(() => undefined),
             getConversation(input.sessionId).catch(() => null),
         ]);
-        const conversationHistory = (conv?.messages ?? []).map((m) => ({
-            role: m.role,
-            content: m.content,
+        const conversationHistory = (conv?.messages ?? []).map((message) => ({
+            role: message.role,
+            content: message.content,
         }));
 
         // Build the initial graph input. Caller `state` may include client-side

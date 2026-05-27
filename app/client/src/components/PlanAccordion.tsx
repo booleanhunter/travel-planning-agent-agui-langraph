@@ -19,9 +19,9 @@ interface Props {
     children: ReactNode;
 }
 
-const stop = (e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+const stop = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
 };
 
 export function PlanAccordion({
@@ -48,8 +48,8 @@ export function PlanAccordion({
                         <button
                             type="button"
                             className="update-plan"
-                            onClick={(e) => {
-                                stop(e);
+                            onClick={(event) => {
+                                stop(event);
                                 onUpdatePlan();
                             }}
                             disabled={!canUpdatePlan}
@@ -59,8 +59,8 @@ export function PlanAccordion({
                         <button
                             type="button"
                             className="save-trip"
-                            onClick={(e) => {
-                                stop(e);
+                            onClick={(event) => {
+                                stop(event);
                                 onSave();
                             }}
                             disabled={!canMarkComplete || saving}
@@ -72,16 +72,16 @@ export function PlanAccordion({
 
                     {picked.length > 0 && (
                         <ol className="plan-strip">
-                            {picked.map((p) => (
-                                <li key={p.id} className="plan-pin">
-                                    <span className="plan-pin-name">{p.name}</span>
+                            {picked.map((poi) => (
+                                <li key={poi.id} className="plan-pin">
+                                    <span className="plan-pin-name">{poi.name}</span>
                                     <button
                                         type="button"
                                         className="plan-pin-x"
-                                        aria-label={`Remove ${p.name}`}
-                                        onClick={(e) => {
-                                            stop(e);
-                                            onRemovePick(p.id);
+                                        aria-label={`Remove ${poi.name}`}
+                                        onClick={(event) => {
+                                            stop(event);
+                                            onRemovePick(poi.id);
                                         }}
                                     >
                                         ×

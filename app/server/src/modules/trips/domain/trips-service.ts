@@ -40,21 +40,21 @@ export async function commitPicks(
     currentCandidates: POI[],
     priorPicks: POI[],
 ): Promise<POI[]> {
-    const priorById = new Map(priorPicks.map((p) => [p.id, p]));
+    const priorById = new Map(priorPicks.map((poi) => [poi.id, poi]));
     const enriched: POI[] = [];
-    for (const m of minimal) {
-        const fromCurrent = currentCandidates.find((p) => p.id === m.poiId);
+    for (const pick of minimal) {
+        const fromCurrent = currentCandidates.find((poi) => poi.id === pick.poiId);
         if (fromCurrent) {
             enriched.push(fromCurrent);
             continue;
         }
-        const prior = priorById.get(m.poiId);
+        const prior = priorById.get(pick.poiId);
         if (prior) {
             enriched.push(prior);
             continue;
         }
         console.warn(
-            `[trips-service] commitPicks — no POI data for id=${m.poiId} (${m.name}), dropping`,
+            `[trips-service] commitPicks — no POI data for id=${pick.poiId} (${pick.name}), dropping`,
         );
     }
     await repoUpdateTripPickedPois(userId, tripId, enriched);
@@ -103,7 +103,7 @@ function generateTripSummary(trip: PastTrip): string {
     );
     if (trip.interests.length) parts.push(`Focused on ${trip.interests.join(', ')}.`);
     if (trip.pickedPois.length)
-        parts.push(`Picked: ${trip.pickedPois.map((p) => sanitizeEntity(p.name)).join(', ')}.`);
+        parts.push(`Picked: ${trip.pickedPois.map((poi) => sanitizeEntity(poi.name)).join(', ')}.`);
     return parts.join(' ');
 }
 
@@ -118,7 +118,7 @@ export async function archiveTripToMemory(userId: string, trip: PastTrip): Promi
             id: `${userId}:${trip.tripId}`,
             user_id: userId,
             topics: ['trip_history', trip.city, ...trip.interests],
-            entities: trip.pickedPois.map((p) => sanitizeEntity(p.name)),
+            entities: trip.pickedPois.map((poi) => sanitizeEntity(poi.name)),
             text: generateTripSummary(trip),
         },
     ]);

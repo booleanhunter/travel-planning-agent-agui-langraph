@@ -54,8 +54,8 @@ router.get('/callback', async (req: Request, res: Response) => {
     }
 });
 
-function escapeHtml(s: string): string {
-    return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+function escapeHtml(input: string): string {
+    return input.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
 function html(body: string): string {

@@ -37,10 +37,10 @@ const FollowUpOutput = z.object({
 
 function buildSystemPrompt(state: AgentStateType): string {
     const candidateList = state.pois.length
-        ? state.pois.map((p) => `  - ${p.id}: ${p.name}`).join('\n')
+        ? state.pois.map((poi) => `  - ${poi.id}: ${poi.name}`).join('\n')
         : '  (none yet)';
     const pickedList = state.pickedPois.length
-        ? state.pickedPois.map((p) => `  - ${p.id}: ${p.name}`).join('\n')
+        ? state.pickedPois.map((poi) => `  - ${poi.id}: ${poi.name}`).join('\n')
         : '  (none picked yet)';
     return [
         'You are a senior travel supervisor reviewing the chat history above.',
@@ -136,7 +136,7 @@ function buildElicit(state: AgentStateType): ElicitSpec | undefined {
             type: 'array',
             title: 'What are you in the mood for?',
             items: {
-                anyOf: INTEREST_OPTIONS.map((o) => ({ const: o.value, title: o.label })),
+                anyOf: INTEREST_OPTIONS.map((option) => ({ const: option.value, title: option.label })),
             },
             ...(memInterests.length > 0 ? { default: memInterests } : {}),
         };
@@ -165,8 +165,8 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
     );
 
     // Conversation history was pre-fetched outside the graph — read from state.
-    const priorMessages: BaseMessage[] = state.conversationHistory.map((m) =>
-        m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
+    const priorMessages: BaseMessage[] = state.conversationHistory.map((message) =>
+        message.role === 'user' ? new HumanMessage(message.content) : new AIMessage(message.content),
     );
     console.log(`[follow-up] context — prior messages=${priorMessages.length}`);
 

@@ -18,7 +18,7 @@ export async function fetchRecs(state: AgentStateType): Promise<Partial<AgentSta
     console.log(
         `[fetch-recs] returned ${pois.length} POIs (top: ${pois
             .slice(0, 3)
-            .map((p) => p.name)
+            .map((poi) => poi.name)
             .join(', ')})`,
     );
     return { pois };

@@ -22,7 +22,7 @@ export function makeUpdateItineraryTool(state: AgentStateType, onApplied: (picks
             );
             onApplied(enriched);
             console.log(
-                `🔧 [tools] updateItinerary — wrote ${enriched.length} picks (${enriched.map((p) => p.name).join(', ')})`,
+                `🔧 [tools] updateItinerary — wrote ${enriched.length} picks (${enriched.map((poi) => poi.name).join(', ')})`,
             );
             return { updated: true, count: enriched.length };
         },

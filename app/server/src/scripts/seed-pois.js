@@ -75,7 +75,7 @@ async function ensureIndex(redis) {
 
 function vectorToBuffer(vec) {
     const buf = Buffer.alloc(vec.length * 4);
-    vec.forEach((v, i) => buf.writeFloatLE(v, i * 4));
+    vec.forEach((value, index) => buf.writeFloatLE(value, index * 4));
     return buf;
 }
 

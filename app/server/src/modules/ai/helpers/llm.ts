@@ -34,6 +34,6 @@ export async function embed(text: string): Promise<number[]> {
 export async function embedToBuffer(text: string): Promise<Buffer> {
     const vec = await embed(text);
     const buf = Buffer.alloc(vec.length * 4);
-    vec.forEach((v, i) => buf.writeFloatLE(v, i * 4));
+    vec.forEach((value, index) => buf.writeFloatLE(value, index * 4));
     return buf;
 }

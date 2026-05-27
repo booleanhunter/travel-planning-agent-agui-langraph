@@ -109,43 +109,43 @@ export async function listPastTrips(userId: string): Promise<PastTrip[]> {
     const keys = await redis.keys(`${prefix}*`);
     if (!keys.length) return [];
 
-    const hashes = await Promise.all(keys.map((k) => redis.hGetAll(k)));
+    const hashes = await Promise.all(keys.map((key) => redis.hGetAll(key)));
     const trips: PastTrip[] = [];
-    for (let i = 0; i < keys.length; i++) {
-        const h = hashes[i];
-        if (!h?.status || h.status !== 'completed') continue;
-        const tripId = keys[i].slice(prefix.length);
-        const trip = hashToTrip(tripId, h);
+    for (let index = 0; index < keys.length; index++) {
+        const hash = hashes[index];
+        if (!hash?.status || hash.status !== 'completed') continue;
+        const tripId = keys[index].slice(prefix.length);
+        const trip = hashToTrip(tripId, hash);
         if (trip) trips.push(trip);
     }
-    trips.sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+    trips.sort((tripA, tripB) => (tripB.completedAt ?? '').localeCompare(tripA.completedAt ?? ''));
     return trips;
 }
 
-function hashToTrip(tripId: string, h: Record<string, string>): PastTrip | null {
-    if (!h || !h.tripId) return null;
+function hashToTrip(tripId: string, hash: Record<string, string>): PastTrip | null {
+    if (!hash || !hash.tripId) return null;
     let pickedPois: POI[] = [];
     let interests: string[] = [];
     try {
-        pickedPois = JSON.parse(h.pickedPois ?? '[]');
+        pickedPois = JSON.parse(hash.pickedPois ?? '[]');
     } catch {
         pickedPois = [];
     }
     try {
-        interests = JSON.parse(h.interests ?? '[]');
+        interests = JSON.parse(hash.interests ?? '[]');
     } catch {
         interests = [];
     }
-    const dates = h.startDate && h.endDate ? { start: h.startDate, end: h.endDate } : undefined;
+    const dates = hash.startDate && hash.endDate ? { start: hash.startDate, end: hash.endDate } : undefined;
     return {
         tripId,
         sessionId: tripId, // tripId == sessionId in v1
-        city: (h.city ?? 'bangalore') as City,
+        city: (hash.city ?? 'bangalore') as City,
         dates,
         interests,
         pickedPois,
-        createdAt: h.createdAt,
-        completedAt: h.completedAt,
+        createdAt: hash.createdAt,
+        completedAt: hash.completedAt,
     };
 }
 

@@ -39,8 +39,8 @@ export async function searchUserPreferences(userId: string): Promise<UserPrefere
     // Roll up findings into a simple shape — heuristic for v1.
     const prefs: UserPreferences = {};
     const interestSet = new Set<string>();
-    for (const m of results.memories) {
-        const text = m.text.toLowerCase();
+    for (const memory of results.memories) {
+        const text = memory.text.toLowerCase();
         if (text.includes('budget')) {
             if (text.includes('low') || text.includes('shoestring')) prefs.budget = 'low';
             else if (text.includes('high') || text.includes('luxury')) prefs.budget = 'high';
@@ -51,8 +51,8 @@ export async function searchUserPreferences(userId: string): Promise<UserPrefere
         else if (text.includes('group')) prefs.groupSize = 'group';
         else if (text.includes('pair') || text.includes('couple')) prefs.groupSize = 'pair';
 
-        for (const t of m.topics ?? []) {
-            if (LEGAL_INTERESTS.has(t)) interestSet.add(t);
+        for (const topic of memory.topics ?? []) {
+            if (LEGAL_INTERESTS.has(topic)) interestSet.add(topic);
         }
     }
     if (interestSet.size) prefs.recurringInterests = Array.from(interestSet);
@@ -98,10 +98,10 @@ export async function appendTurn(
         user_id: userId,
         messages: [
             ...(existing.messages ?? []),
-            ...messages.map((m, i) => ({
-                role: m.role,
-                content: m.content,
-                id: `${sessionId}-${Date.now()}-${i}`,
+            ...messages.map((message, index) => ({
+                role: message.role,
+                content: message.content,
+                id: `${sessionId}-${Date.now()}-${index}`,
             })),
         ],
     });

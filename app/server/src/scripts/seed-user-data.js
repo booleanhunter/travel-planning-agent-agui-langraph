@@ -69,7 +69,7 @@ async function writeTrip(redis, userId, trip, pickedPois) {
 
 /** Write a batch of MemoryRecords to AMS long-term memory. */
 async function writeMemories(ams, userId, records) {
-    const enriched = records.map((m) => ({ ...m, user_id: userId }));
+    const enriched = records.map((record) => ({ ...record, user_id: userId }));
     try {
         await ams.createLongTermMemory(enriched);
     } catch (err) {
@@ -107,7 +107,7 @@ function tripSummaryMemory(userId, trip, picks) {
         id: `${userId}:${trip.tripId}`,
         user_id: userId,
         topics: ['trip_history', trip.city, ...trip.interests],
-        entities: picks.map((p) => sanitizeEntity(p.name)),
+        entities: picks.map((poi) => sanitizeEntity(poi.name)),
         text: trip.summary,
     };
 }
@@ -117,7 +117,7 @@ function tripSummaryMemory(userId, trip, picks) {
 async function main() {
     const usersJson = JSON.parse(await readFile(USERS_PATH, 'utf8'));
     const poisJson = JSON.parse(await readFile(POIS_PATH, 'utf8'));
-    const poisById = new Map(poisJson.pois.map((p) => [p.id, p]));
+    const poisById = new Map(poisJson.pois.map((poi) => [poi.id, poi]));
     console.log(`Loaded ${usersJson.users.length} users and ${poisById.size} POIs from disk.`);
 
     const redis = createClient({ url: REDIS_URL });

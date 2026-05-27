@@ -24,8 +24,8 @@ function buildDescription(trip: PastTrip): string {
     if (trip.pickedPois.length) {
         lines.push('');
         lines.push('Places to visit:');
-        for (const p of trip.pickedPois) {
-            lines.push(`• ${p.name}`);
+        for (const poi of trip.pickedPois) {
+            lines.push(`• ${poi.name}`);
         }
     }
     return lines.join('\n');

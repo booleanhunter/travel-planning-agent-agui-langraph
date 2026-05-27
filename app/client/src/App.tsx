@@ -18,7 +18,7 @@ export function App() {
     const [savedAt, setSavedAt] = useState<string | null>(null);
 
     const pickedPois = stream.pickedPois;
-    const pickedIds = useMemo(() => pickedPois.map((p) => p.id), [pickedPois]);
+    const pickedIds = useMemo(() => pickedPois.map((poi) => poi.id), [pickedPois]);
 
     // Staging: which places the user currently has selected. Mirrors pickedPois on
     // every server-confirmed change, but the user can freely edit between commits.
@@ -29,18 +29,18 @@ export function App() {
         setStagedPois(pickedPois);
     }, [pickedPois]);
 
-    const stagedIds = useMemo(() => stagedPois.map((p) => p.id), [stagedPois]);
+    const stagedIds = useMemo(() => stagedPois.map((poi) => poi.id), [stagedPois]);
 
     const stagedDiffers = useMemo(() => {
         if (stagedPois.length !== pickedPois.length) return true;
-        return stagedPois.some((p, i) => pickedPois[i]?.id !== p.id);
+        return stagedPois.some((poi, index) => pickedPois[index]?.id !== poi.id);
     }, [stagedPois, pickedPois]);
 
     // Pois shown in the grid: this turn's candidates + committed picks that fell
     // out of the latest fetch. Picks carry full POI data so we just include them.
     const gridPois: POI[] = useMemo(() => {
-        const inStream = new Set(stream.pois.map((p) => p.id));
-        const orphans = pickedPois.filter((p) => !inStream.has(p.id));
+        const inStream = new Set(stream.pois.map((poi) => poi.id));
+        const orphans = pickedPois.filter((poi) => !inStream.has(poi.id));
         return [...stream.pois, ...orphans];
     }, [stream.pois, pickedPois]);
 
@@ -53,7 +53,7 @@ export function App() {
             if (picks.length === 0) {
                 userMessage = "Please clear my plan — I don't want any places.";
             } else {
-                const list = picks.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+                const list = picks.map((poi, index) => `${index + 1}. ${poi.name}`).join('\n');
                 userMessage = `Here are the places I'd like to visit, in-order:\n${list}`;
             }
             return stream.submitTurn({ userMessage });
@@ -70,14 +70,14 @@ export function App() {
     /** Checkbox click — purely local staging, no server call. */
     const togglePick = useCallback((poi: POI) => {
         setStagedPois((picks) => {
-            const exists = picks.some((p) => p.id === poi.id);
-            return exists ? picks.filter((p) => p.id !== poi.id) : [...picks, poi];
+            const exists = picks.some((pick) => pick.id === poi.id);
+            return exists ? picks.filter((pick) => pick.id !== poi.id) : [...picks, poi];
         });
     }, []);
 
     /** × on a strip pin — purely local unstaging, no server call. */
     const removePick = useCallback((poiId: string) => {
-        setStagedPois((picks) => picks.filter((p) => p.id !== poiId));
+        setStagedPois((picks) => picks.filter((pick) => pick.id !== poiId));
     }, []);
 
     const submitFreeForm = useCallback(
@@ -94,7 +94,7 @@ export function App() {
             const dates = startDate && endDate ? { start: startDate, end: endDate } : undefined;
             const interests = values.interests as string[] | undefined;
 
-            const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+            const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
             const sentences: string[] = [];
             if (destination) sentences.push(`My destination is ${cap(destination)}.`);
             if (dates) sentences.push(`I plan to travel from ${dates.start} to ${dates.end}.`);
@@ -164,7 +164,7 @@ export function App() {
                     conversationHistory: Array<{ role: string; content: string }>;
                 };
                 // Best-effort rehydrate: replay user's first message to refetch the candidates
-                const firstUser = data.conversationHistory.find((m) => m.role === 'user');
+                const firstUser = data.conversationHistory.find((message) => message.role === 'user');
                 if (firstUser) {
                     await stream.submitTurn({
                         userMessage: firstUser.content,
