@@ -5,12 +5,10 @@
             "displayName": "Ashwin",
             "memories": [
                 {
-                    "id": "ashwin:pref:profile",
                     "text": "Solo traveler who prefers off-the-beaten-path food spots over famous landmarks. Comfortable with mid-range pricing.",
                     "topics": ["travel_preferences", "food", "offbeat", "solo", "budget"]
                 },
                 {
-                    "id": "ashwin:pref:cuisine",
                     "text": "Loves regional cuisines, hole-in-the-wall eateries, and street food. Often picks a destination just for the food scene.",
                     "topics": ["travel_preferences", "food", "interests"]
                 }
@@ -65,12 +63,10 @@
             "displayName": "Bhavana",
             "memories": [
                 {
-                    "id": "bhavana:pref:profile",
                     "text": "Travels with family — partner and two young kids (ages 6 and 9). Prefers famous landmarks, outdoor parks, and family-friendly restaurants everyone can enjoy.",
                     "topics": ["travel_preferences", "landmarks", "outdoors", "family"]
                 },
                 {
-                    "id": "bhavana:pref:budget",
                     "text": "Comfortable with mid-range family budgets — hotels with pools, sit-down restaurants, taxis over public transit when there are kids in tow.",
                     "topics": ["travel_preferences", "budget"]
                 }
@@ -125,12 +121,10 @@
             "displayName": "Kyle",
             "memories": [
                 {
-                    "id": "kyle:pref:profile",
                     "text": "Travels as a couple. Loves rooftop bars, live jazz, contemporary art, and upscale food. Prefers urban destinations.",
                     "topics": ["travel_preferences", "nightlife", "culture", "pair"]
                 },
                 {
-                    "id": "kyle:pref:budget",
                     "text": "Comfortable spending high on luxury experiences — fine dining, premium cocktails, boutique hotels.",
                     "topics": ["travel_preferences", "budget"]
                 }
