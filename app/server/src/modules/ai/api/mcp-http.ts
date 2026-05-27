@@ -41,6 +41,12 @@ mcpRouter.post('/', async (req: Request, res: Response) => {
         const server = createMcpServer();
         await server.connect(transport);
     } else {
+        console.log(
+            '🔍 [mcp-http] 400 — sessionId=%s isInit=%s method=%s',
+            sessionId ?? '(none)',
+            isInitializeRequest(req.body),
+            (req.body as { method?: string })?.method ?? '(no method)',
+        );
         res.status(400).json({
             jsonrpc: '2.0',
             error: { code: -32000, message: 'Bad Request: missing or invalid session id' },
