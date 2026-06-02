@@ -244,7 +244,13 @@ export function App() {
     }, [stream.suggestedActions, stream.running, submitFreeForm]);
 
     const canvasEmpty =
-        stream.pois.length === 0 && !stream.weather && !stream.running && !stream.error;
+        stream.pois.length === 0 && !stream.weather && !stream.error;
+
+    const SAMPLE_PROMPTS = [
+        'Plan a trip to Barcelona',
+        '5 days in Lisbon, lots of local food',
+        'A slow week in indie coffee shops and bookshops',
+    ];
 
     return (
         <div className="app">
@@ -268,11 +274,42 @@ export function App() {
                 <main className="canvas">
                     {canvasEmpty && (
                         <div className="canvas-empty">
-                            <h2>Plan your trip</h2>
-                            <p>
-                                Type a prompt in the sidebar — try{' '}
-                                <em>"Plan a trip to Bangalore"</em>.
+                            <div className="canvas-empty-label">
+                                {stream.running ? 'working on it' : 'welcome'}
+                            </div>
+                            <h2 className="canvas-empty-heading">
+                                {stream.running ? (
+                                    <>
+                                        On it
+                                        <span className="canvas-empty-running-dots">
+                                            <span className="typing-dot" />
+                                            <span className="typing-dot" />
+                                            <span className="typing-dot" />
+                                        </span>
+                                    </>
+                                ) : (
+                                    'Where are you going?'
+                                )}
+                            </h2>
+                            <p className="canvas-empty-text">
+                                {stream.running
+                                    ? 'Putting together your itinerary. Usually takes a few seconds — picks, weather, and a suggested route will appear here.'
+                                    : "One sentence is enough. I'll figure out what's still missing and ask only for that — plus tune to the kind of day you're after."}
                             </p>
+                            {!stream.running && (
+                                <div className="canvas-empty-chips">
+                                    {SAMPLE_PROMPTS.map((prompt) => (
+                                        <button
+                                            key={prompt}
+                                            type="button"
+                                            className="canvas-empty-chip"
+                                            onClick={() => submitFreeForm(prompt)}
+                                        >
+                                            {prompt}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                     {stream.error && (
