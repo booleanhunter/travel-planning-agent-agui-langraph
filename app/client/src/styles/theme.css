@@ -19,6 +19,7 @@
     --radius-lg: 6px;
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+    --font-handwriting: 'Caveat', 'Segoe Script', cursive;
     --yellow: #e0a818;
     --green: #1c866b;
     --red: #d44a3f;

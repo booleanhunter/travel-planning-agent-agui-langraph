@@ -51,7 +51,7 @@ export function ChatSidebar({ conversation, elicitSlot, followupSlot, inputSlot 
                 {conversation.length === 0 && !elicitSlot && (
                     <div className="msg msg-agent">
                         <div className="msg-bubble">
-                            Hi Ashwin. Try <em>"Plan a trip to Bangalore"</em> to get started.
+                            Hi Ashwin. Try <em>"plan a trip"</em> to get started.
                         </div>
                     </div>
                 )}

@@ -64,20 +64,63 @@
 .canvas-empty {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    gap: 18px;
     height: 100%;
-    color: var(--text-muted);
-    text-align: center;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 8px;
 }
-.canvas-empty h2 {
-    font-size: 18px;
-    margin: 0 0 8px;
-    color: var(--text);
-}
-.canvas-empty p {
+.canvas-empty-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-soft);
     margin: 0;
-    max-width: 360px;
+}
+.canvas-empty-heading {
+    font-family: var(--font-handwriting);
+    font-size: 56px;
+    font-weight: 400;
+    line-height: 1.1;
+    color: var(--text);
+    margin: 0;
+}
+.canvas-empty-text {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    max-width: 540px;
+    margin: 0;
+}
+.canvas-empty-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+.canvas-empty-chip {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.canvas-empty-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+}
+.canvas-empty-running-dots {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 10px;
+    vertical-align: middle;
 }
 
 /* ---------- Sidebar ---------- */
