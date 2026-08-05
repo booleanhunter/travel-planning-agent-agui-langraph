@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HttpAgent, type AgentSubscriber } from '@ag-ui/client';
+import { ulid } from 'ulid';
 import type { POI, Weather, ElicitSpec, DotStatus, City } from '../types';
 
 interface ConversationEntry {
@@ -59,18 +60,16 @@ function readUserIdFromUrl(): string {
     return u?.trim() || 'ashwin';
 }
 
-/**
- * tripId is fixed per user. AMS conversation + trip-store working slot persist
- * across page reloads. Reset (via the memory drawer) wipes them.
- */
-const TRIP_ID = 'newTripId';
-
 export function useAgentStream(): AgentStream & {
     userId: string;
     tripId: string;
 } {
     const [userId] = useState<string>(() => readUserIdFromUrl());
-    const tripId = TRIP_ID;
+    // Fresh ULID per page load — each browser session becomes a distinct
+    // AMS session (working memory is keyed on session_id == tripId). Page
+    // reload = brand-new planning slot. Past trips are unaffected; they
+    // carry their own ids (e.g. "seed-ashwin-bangalore").
+    const [tripId] = useState<string>(() => ulid());
     const agentRef = useRef<HttpAgent | null>(null);
 
     const [pois, setPois] = useState<POI[]>([]);
