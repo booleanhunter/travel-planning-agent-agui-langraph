@@ -319,8 +319,9 @@ export function makeSaveTripToCalendarTool(
             name: 'saveTripToCalendar',
             description:
                 "Save a trip to the user's Google Calendar as an all-day event. " +
-                "Pass `tripId`. For the current planning slot use \"newTripId\"; for past trips " +
-                'use the seeded id (e.g. "seed-ashwin-bangalore"). ' +
+                "Pass `tripId`. For the in-progress trip use the current planning-slot tripId " +
+                "(named in the system prompt). For past trips use the seeded id " +
+                '(e.g. "seed-ashwin-bangalore"). ' +
                 "If the user mentioned travel dates or a destination THIS turn (e.g. via a chip-card " +
                 "submission or 'I'll travel from X to Y'), ALWAYS include them as startDate, endDate, " +
                 "and destination args — they may not yet be persisted in the trip-store. The tool " +
@@ -329,7 +330,7 @@ export function makeSaveTripToCalendarTool(
                 'complete the sign-in prompt that appeared. ' +
                 "If it returns `error: 'No travel dates...'`, ask the user for dates and call again WITH them.",
             schema: z.object({
-                tripId: z.string().describe('The trip to save (planning slot uses "newTripId").'),
+                tripId: z.string().describe('The trip to save. For the in-progress trip use the planning-slot tripId from the system prompt; for past trips use the seeded id.'),
                 destination: CitySchema.optional().describe(
                     'Override destination if the user mentioned a different city this turn.',
                 ),
