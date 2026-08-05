@@ -8,152 +8,175 @@ Example question used throughout: **"Plan a trip to Bangalore."**
 
 ## Sequence 1 — Plan with elicit (two HTTP turns)
 
-User types a planning query. `RouteIntent` extracts what it can but `dates` is missing. The graph routes to `FinalizeElicit` and returns the elicit spec as final state. The client renders a chip card; the user fills the dates; the client submits a new turn with the merged state. The graph runs end-to-end, fans out `FetchRecs ∥ FetchWeather`, and `FinalizePlan` returns the agent's summary plus `suggestedActions[]`.
+User types a planning query. `ContextRetriever` loads preferences + transcript + trip draft. `TravelAgent`'s LLM tries to plan but recognizes critical slots are missing (e.g. dates), so it returns a brief response. `FollowUp` extracts the current-turn slots, computes `needsMoreInfo=true`, and returns `state.elicit = { mode, message, requestedSchema }` as final state. The client renders a chip card; the user fills the dates; the client submits a new turn with the merged state. Second run goes end-to-end — `TravelAgent` emits `searchPois` + `getWeather` in parallel; `FollowUp` returns `pois`, `weather`, `response`, and `suggestedActions[]`.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
     participant UI as React + @ag-ui/client
-    participant Run as Express + @ag-ui/langgraph
-    participant LG as LangGraph<br/>(RouteIntent · FetchRecs ∥ FetchWeather ·<br/>FinalizePlan / FinalizeElicit)
+    participant Run as chat.ts (AG-UI / SSE)
+    participant Runtime as runtime.ts<br/>(streamPlannerTurn)
+    participant Graph as Graph<br/>(CR → TA → FU)
     participant AMS as Agent Memory Server
-    participant Redis as Redis · idx:pointsOfInterest
+    participant Redis as Redis · trip-store +<br/>idx:pointsOfInterest
     participant LLM as OpenAI
 
     User->>UI: types "Plan a trip to Bangalore"
-    UI->>Run: AG-UI request with prompt + sessionId
-    Run->>LG: streamEvents(input)
+    UI->>Run: POST /api/chat (AG-UI request body)
+    Run->>Runtime: streamPlannerTurn({ userId, tripId, userMessage, state })
+    Runtime->>Graph: graph.stream(input, { streamMode: 'updates' })
 
-    Note over LG,AMS: RouteIntent
-    LG->>AMS: searchLongTermMemory user_id=ashwin · semantic
-    AMS-->>LG: prefs (interests=[food, arts] ×4 · budget=mid · group=solo)
-    LG->>LLM: slot-extraction LLM call
-    LLM-->>LG: destination=Bangalore · dates=missing · interests=[food, arts, landmarks]
+    Note over Graph,AMS: ContextRetriever
+    Graph->>AMS: getPreferences(userId) · getConversation(tripId)
+    AMS-->>Graph: prefs (recurringInterests=[food, arts], …) + transcript
+    Graph->>Redis: getTrip(userId, tripId)
+    Redis-->>Graph: existing trip draft
 
-    Note over LG: conditional edge — dates missing → FinalizeElicit
-    LG->>LG: FinalizeElicit · return { elicit: { message, requestedSchema } }
-    LG-->>Run: state stream — { elicit: {...} } at FinalizeElicit's on_chain_end
-    Run-->>UI: AG-UI STATE_DELTA
-    UI-->>User: render chip card from requestedSchema · food + arts pre-selected from memory
+    Note over Graph,LLM: TravelAgent (ReAct loop)
+    Graph->>LLM: ReAct step with bound tools
+    LLM-->>Graph: brief response + signals missing dates<br/>(no tool calls emitted yet)
+
+    Note over Graph,LLM: FollowUp
+    Graph->>LLM: extraction LLM call (structured output)
+    LLM-->>Graph: { slots: { destination=Bangalore }, needsMoreInfo=true, response, followups }
+    Graph->>Graph: buildElicit({ missingFields=[dates], preferences }) → ElicitSpec
+    Graph->>Redis: ensureDraft(userId, tripId, …)
+    Graph->>AMS: appendTurn(tripId, turn) · fire-and-forget
+
+    Runtime-->>Run: onNodeUpdate(FollowUp, { elicit, response, … }) → onFinish
+    Run-->>UI: SSE: STATE_SNAPSHOT { elicit: {...}, response, … }<br/>then RUN_FINISHED
+    UI-->>User: render chip card from requestedSchema<br/>(food + arts pre-selected from memory)
 
     User->>UI: fills dates · keeps food + arts · adds landmarks
-    UI->>Run: AG-UI request with prompt + merged state
-    Run->>LG: streamEvents(input)
+    UI->>Run: POST /api/chat with merged client state
+    Run->>Runtime: streamPlannerTurn(...)
+    Runtime->>Graph: graph.stream(...)
 
-    Note over LG,LLM: RouteIntent again — slots now all filled
-    LG->>AMS: searchLongTermMemory · semantic
-    AMS-->>LG: prefs
-    LG->>LLM: slot extraction (idempotent — same slots)
-    LLM-->>LG: all required slots present
+    Note over Graph,AMS: ContextRetriever (re-hydrate)
+    Graph->>AMS: getPreferences · getConversation
+    AMS-->>Graph: prefs + transcript (now includes prior elicit turn)
+    Graph->>Redis: getTrip
+    Redis-->>Graph: trip draft
 
-    Note over LG: conditional edge — slots filled → [FetchRecs, FetchWeather] (parallel)
+    Note over Graph,LLM: TravelAgent — slots filled, plan trip
+    Graph->>LLM: ReAct step; LLM emits searchPois + getWeather in one turn
 
-    par Parallel fan-out — Beat 4.7 Performance
-        LG->>LLM: embed state.interests (text-embedding-3-small)
-        LLM-->>LG: query vector (1536-dim)
-        LG->>Redis: FT.SEARCH idx:pointsOfInterest (@city:{Bangalore}) =>[KNN 12 @vector $qv]
-        Redis-->>LG: 12 ranked POIs
+    par Parallel tool calls inside TravelAgent
+        Graph->>LLM: embed state.interests (text-embedding-3-small)
+        LLM-->>Graph: query vector (1536-dim)
+        Graph->>Redis: searchPois · FT.SEARCH idx:pointsOfInterest<br/>(@city:{Bangalore}) =>[KNN 12 @vector $qv]
+        Redis-->>Graph: 12 ranked POIs
     and
-        LG->>LG: FetchWeather · in-code lookup<br/>(bangalore, may → "hot, occasional showers")
+        Graph->>Graph: getWeather · in-code city/month lookup
     end
 
-    Note over LG: FinalizePlan
-    LG->>LLM: summary LLM call (POIs + weather + interests)
-    LLM-->>LG: agent response text + suggestedActions
-    LG->>AMS: appendToWorkingMemory(turn) · fire-and-forget
+    Graph->>LLM: ReAct loop continues; LLM composes final response
+    LLM-->>Graph: response text
 
-    LG-->>Run: state stream — pois, weather, response, suggestedActions
-    Run-->>UI: AG-UI STATE_DELTA events
-    UI-->>User: POI grid · weather card · agent summary · "What should I pack?" chip
+    Note over Graph,LLM: FollowUp
+    Graph->>LLM: extraction LLM call (structured output)
+    LLM-->>Graph: { slots all present, needsMoreInfo=false, response, followups }
+    Graph->>Redis: ensureDraft(…)
+    Graph->>AMS: appendTurn(…) · fire-and-forget
+
+    Runtime-->>Run: onNodeUpdate(deltas) → onFinish
+    Run-->>UI: SSE: STATE_SNAPSHOT { pois, weather, response, suggestedActions } + RUN_FINISHED
+    UI-->>User: POI grid · weather card · agent summary ·<br/>"What should I pack?" chip
 ```
 
 ---
 
 ## Sequence 2 — Refinement turn (sharper interests)
 
-User articulates a sharper vibe on a follow-up turn. The same graph runs end-to-end; `FetchRecs` embeds the new interest descriptors and the hybrid `FT.SEARCH` returns a tighter KNN cluster around the new vector. No Google Places calls — the POI catalog is pre-seeded.
+User articulates a sharper vibe on a follow-up turn. The same graph runs end-to-end; `TravelAgent`'s ReAct loop re-issues `searchPois` with the new interest descriptors, the hybrid `FT.SEARCH` returns a tighter KNN cluster around the new vector. No Google Places calls — the POI catalog is pre-seeded.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
     participant UI as React + @ag-ui/client
-    participant LG as LangGraph
-    participant Redis as Redis · idx:pointsOfInterest
+    participant Run as chat.ts (AG-UI / SSE)
+    participant Runtime as runtime.ts
+    participant Graph as Graph (CR → TA → FU)
+    participant Redis
     participant LLM as OpenAI
 
     Note over User,UI: POI grid from Sequence 1 already on canvas
     User->>UI: types "actually I want it to feel moody and slow —<br/>indie coffee shops and cobblestone streets alone"
-    UI->>LG: AG-UI request with prompt + accumulated client state
+    UI->>Run: POST /api/chat with accumulated client state
+    Run->>Runtime: streamPlannerTurn(...)
+    Runtime->>Graph: graph.stream(...)
 
-    Note over LG,LLM: RouteIntent · slot extraction over the new phrase
-    LG->>LLM: extract slots
-    LLM-->>LG: interests=[moody, slow, indie, contemplative, walkable, solitary]<br/>(other slots already in state)
+    Note over Graph: ContextRetriever (re-hydrate; preferences cached but transcript grows)
 
-    Note over LG: conditional edge → [FetchRecs, FetchWeather] (parallel)
+    Note over Graph,LLM: TravelAgent — LLM picks up new interest descriptors
+    Graph->>LLM: ReAct step
+    LLM-->>Graph: emits searchPois (only — weather already in state)
 
-    par Parallel fan-out
-        LG->>LLM: embed sharper interests
-        LLM-->>LG: tighter query vector
-        LG->>Redis: FT.SEARCH idx:pointsOfInterest (@city:{Bangalore}) =>[KNN 12 @vector $qv]
-        Redis-->>LG: 12 POIs · tighter cluster (indie/quiet/walkable)
-    and
-        LG->>LG: FetchWeather (cached lookup)
+    par Parallel tool calls (single tool here, but bound for parallelism)
+        Graph->>LLM: embed sharper interests
+        LLM-->>Graph: tighter query vector
+        Graph->>Redis: searchPois · FT.SEARCH (@city:{Bangalore}) =>[KNN 12 @vector $qv]
+        Redis-->>Graph: 12 POIs · tighter cluster (indie/quiet/walkable)
     end
 
-    LG->>LLM: summary
-    LLM-->>LG: response + suggestedActions
-    LG-->>UI: state stream — new pois, same weather
+    Graph->>LLM: ReAct loop continues; LLM composes response
+    LLM-->>Graph: response
 
-    UI-->>User: POI grid reshuffles · same canvas shape · "why this place" tooltips show matched dimensions
+    Note over Graph: FollowUp emits suggestedActions
+    Runtime-->>Run: deltas
+    Run-->>UI: SSE: STATE_SNAPSHOT { pois (new), response, suggestedActions }
+    UI-->>User: POI grid reshuffles · same canvas shape ·<br/>"why this place" tooltips show matched dimensions
 ```
 
 ---
 
 ## Sequence 3 — Memory drawer + load past trip
 
-Hamburger click opens the drawer. Clicking a past trip rehydrates from AMS only — the episodic record (for the trip metadata) plus working memory (for the conversation transcript). No LangGraph checkpoint involved.
+Hamburger click opens the memory drawer. Loading a past trip rehydrates from AMS (preferences + working memory) and Redis (the seeded past-trip metadata). No LangGraph run involved — these are plain REST endpoints on `/api/user`.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
     participant UI as React + @ag-ui/client
-    participant Backend as Express · /api/user
+    participant Backend as Express · /api/user<br/>(trips-routes.ts)
     participant AMS as Agent Memory Server
+    participant Redis
 
     User->>UI: clicks hamburger
-    UI->>Backend: GET /api/user/profile · userId=ashwin
+    UI->>Backend: GET /api/user/profile?userId=ashwin
 
-    par Parallel memory queries
-        Backend->>AMS: searchLongTermMemory · semantic · prefs
-        Backend->>AMS: searchLongTermMemory · episodic · trips
+    par Parallel fetches
+        Backend->>AMS: getPreferences(userId)
+        Backend->>Redis: listPastTrips(userId)
     end
-    AMS-->>Backend: prefs + past trips
-    Backend-->>UI: profile JSON
+    AMS-->>Backend: prefs
+    Redis-->>Backend: past trips (seeded keys + drafts)
+    Backend-->>UI: { userId, preferences, pastTrips }
     UI-->>User: drawer slides in — Preferences + Past trips
 
-    Note over User,UI: User clicks past trip
-    User->>UI: clicks Kyoto · Oct 2024
-    UI->>Backend: POST /api/user/load-trip · tripId=kyoto-oct-2024
+    Note over User,UI: User clicks a past trip
+    User->>UI: clicks "Bangalore (seed)"
+    UI->>Backend: POST /api/user/load-trip { userId, tripId }
 
-    Backend->>AMS: get episode by tripId
-    AMS-->>Backend: episode (sessionId, destination, dates, itinerary snapshot)
-    Backend->>AMS: getWorkingMemory · sessionId
+    Backend->>Redis: getTrip(userId, tripId)
+    Redis-->>Backend: trip metadata + itinerary snapshot
+    Backend->>AMS: getConversation(tripId)
     AMS-->>Backend: conversation transcript
 
-    Backend-->>UI: { episode, conversationHistory }
-    UI-->>User: chat sidebar rehydrates from transcript · canvas restores itinerary snapshot
-    Note over User,UI: User can continue editing · client-side state sent on next turn
+    Backend-->>UI: { trip, conversation }
+    UI-->>User: chat sidebar rehydrates from transcript ·<br/>canvas restores itinerary snapshot
+    Note over User,UI: User can continue editing · next turn carries<br/>the merged client state into the graph
 ```
 
 ---
 
 ## What these diagrams emphasize
 
-- **Memory before extraction.** `RouteIntent` reads AMS preferences *before* extracting slots, so memory-sourced values prefill the elicit chip card. The "from memory" badge tracks which slots came from AMS vs. the prompt.
-- **Stateless turns.** Each graph run is one-shot — no `interrupt()`, no checkpointer, no resume. Elicit is returned as final state; the client resubmits with merged state.
-- **Parallel fetches = Beat 4.7 Performance.** Sequence 1 shows the parallel fan-out. The audience sees two AG-UI node-lifecycle events resolve concurrently in the sidebar.
-- **Pre-seeded POI catalog.** The runtime never calls Google Places. Sequences 1 and 2 both touch only Redis + OpenAI embeddings on the request path.
-- **AMS is the single source of truth for cross-session memory.** Sequence 3 shows it owns both the episodic record AND the conversation transcript. No RedisSaver to fall back on.
+- **Memory before extraction.** `ContextRetriever` reads AMS preferences + transcript *before* `TravelAgent` runs, so memory-sourced values prefill the elicit chip card that `FollowUp` builds. The "from memory" badge tracks which slots came from AMS vs. the prompt.
+- **Stateless turns.** Each graph run is one-shot — no `interrupt()`, no checkpointer. Elicit is returned as final state; the client resubmits with merged state.
+- **Parallelism lives inside `TravelAgent`.** The LLM is system-prompted to emit `searchPois` + `getWeather` together for trip-planning intents. The agent runtime runs the tool calls concurrently. Visible in the AG-UI event stream as overlapping `STATE_SNAPSHOT` deltas (`pois` and `weather` arriving close together).
+- **Pre-seeded POI catalog.** The runtime never calls Google Places. Sequences 1 and 2 both touch only Redis + OpenAI (embeddings + chat) on the request path.
+- **Memory drawer doesn't touch the graph.** Sequence 3 is plain REST against `/api/user`, served by `trips-routes.ts`. The trip-store HASH lives in Redis; the transcript lives in AMS. Both are read directly.
