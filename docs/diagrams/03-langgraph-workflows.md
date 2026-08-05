@@ -2,77 +2,133 @@
 
 The LangGraph topology that orchestrates the demo.
 
-One graph, five plain nodes, no ReAct loop, no LLM-bound tools, no router, no checkpointer. Each node is a plain async function; `streamEvents({ version: "v3" })` emits node-lifecycle events that drive the UI.
+One graph, three linear nodes, no checkpointer. The decision-making LLM lives inside `TravelAgent` as a ReAct loop with bound tools. State streams as per-node deltas via `graph.stream(input, { streamMode: 'updates' })` (wrapped by `streamPlannerTurn` in `runtime.ts`); adapters translate each delta into their transport-native events.
 
 ---
 
-## The single graph
+## The graph
 
 ```mermaid
 flowchart TD
-    Start((START)) --> RI[RouteIntent<br/>extract slots from user message;<br/>hydrate state.preferences from AMS]
-    RI --> BR{slots filled?}
-
-    BR -->|no| FE[FinalizeElicit<br/>return { elicit: { message, requestedSchema } }<br/>as final state]
-    BR -->|yes| FW[FetchWeather<br/>in-code city/month lookup]
-    BR -->|yes| FR[FetchRecs<br/>embed interests +<br/>hybrid FT.SEARCH idx:pointsOfInterest]
-
-    FR --> FP[FinalizePlan<br/>generate summary +<br/>suggestedActions for follow-up chips]
-    FW --> FP
-
-    FE --> End(((END)))
-    FP --> End
+    Start((START)) --> CR[ContextRetriever<br/>load Redis trip-store + AMS<br/>preferences and working memory]
+    CR --> TA[TravelAgent<br/>ReAct loop with bound tools]
+    TA --> FU[FollowUp<br/>extract slots · decide elicit ·<br/>suggestedActions · persist]
+    FU --> End(((END)))
 
     classDef nodeStyle fill:transparent,color:#000000,stroke:#8a99a0,stroke-width:2px
     classDef purple fill:transparent,color:#c795e3,stroke:#c795e3,stroke-width:2px,font-weight:bold,stroke-dasharray: 5 5
-    class Start,End,RI,BR,FE,FW,FR,FP nodeStyle
-    class FR,FW,FP,FE purple
+    class Start,End,CR,TA,FU nodeStyle
+    class CR,TA,FU purple
 ```
 
 #### Notes on the topology
 
-- **No router.** `RouteIntent` is a single node, not a conditional edge over intent types. Branching happens at the conditional edge *after* `RouteIntent`, based purely on whether required slots are filled.
-- **No ReAct loop.** No `createReactAgent` / `createAgent`. Each step is a deterministic data fetch or LLM call.
-- **No checkpointer.** Each graph run is one-shot. State that survives between turns lives on the client (currently-filled slots, picked POIs) and in AMS (conversation, preferences, past trips).
-- **Elicit returned as state.** `FinalizeElicit` returns `{ elicit: { message, requestedSchema } }` as the graph's final output. The graph ends; the client renders a chip card from `requestedSchema`, the user fills it, and the client resubmits a new turn with the merged state.
-- **Parallel fan-out.** The conditional edge returns the array `["FetchRecs", "FetchWeather"]` when slots are filled; LangGraph runs both concurrently. Visible in the UI as two AG-UI node-lifecycle events flipping from yellow to green together.
+- **Linear, no branching at the graph level.** No conditional edges, no router. The branching that matters (whether to elicit, which tool to call) happens *inside* nodes — `TravelAgent`'s ReAct loop and `FollowUp`'s single LLM call.
+- **No checkpointer.** Each graph run is one-shot. State that survives between turns lives on the client (filled slots, picked POIs) and in AMS (conversation, preferences, past trips).
+- **Elicit returned as state.** `FollowUp` returns `state.elicit = { mode, message, requestedSchema }` as the graph's final output when required slots are missing and the user hasn't already declined. The graph ends; the adapter handles the round-trip.
+- **Streaming.** `runtime.ts` calls `graph.stream(input, { streamMode: 'updates' })` and fans the per-node delta dictionary out as `onNodeStart`/`onNodeUpdate`/`onNodeFinish` callbacks to the adapter.
 
 ---
 
-## `FetchRecs` — internal flow
+## ContextRetriever — internal flow
 
-`FetchRecs` is a single graph node, but it does two things in sequence: embed the user's interests, then run the hybrid `FT.SEARCH`. The runtime never calls Google Places — the POI catalog was populated once by the seed script.
+Single read point at graph entry. Hydrates state from Redis (the current trip draft) and AMS (recurring preferences + the live conversation transcript). One round each, no parallelism needed — these are the prerequisites every downstream node assumes.
 
 ```mermaid
 flowchart LR
-    IN([node enters]) --> EM[embed state.interests<br/>OpenAI text-embedding-3-small<br/>1536-dim]
-    EM --> KNN["FT.SEARCH idx:pointsOfInterest<br/>(@city:{X}) =>[KNN $k @vector $qv AS score]<br/>SORTBY score ASC"]
-    KNN --> RANK[rank + diversify]
-    RANK --> OUT([return { pois }])
+    IN([node enters]) --> PR[getPreferences userId<br/>via user-service.ts → AMS]
+    IN --> CV[getConversation tripId<br/>via user-service.ts → AMS]
+    IN --> TR[getTrip userId, tripId<br/>via trips-service.ts → Redis]
+    PR --> OUT([state delta: preferences])
+    CV --> OUT2([state delta: conversation])
+    TR --> OUT3([state delta: trip draft])
 
     classDef nodeStyle fill:transparent,color:#000000,stroke:#8a99a0,stroke-width:2px
-    class IN,EM,KNN,RANK,OUT nodeStyle
+    class IN,PR,CV,TR,OUT,OUT2,OUT3 nodeStyle
 ```
 
-The user's articulated interests just tighten or relax the KNN cluster around the candidate set for that city.
+---
+
+## TravelAgent — internal flow (ReAct loop with bound tools)
+
+The LLM decides which tools to call. The system prompt tells it to emit multiple tool calls in one turn when planning a trip — typically `searchPois` + `getWeather` in parallel. Tool results are fed back into the loop until the LLM has no more tool calls to emit.
+
+```mermaid
+flowchart LR
+    IN([node enters]) --> LLM[LLM step<br/>decide which tools to call]
+    LLM --> Decision{tool calls?}
+    Decision -- yes --> Fanout[run tool calls<br/>in parallel when LLM emits<br/>more than one]
+    Decision -- no --> Done([return state delta:<br/>pois · weather · pickedPois ·<br/>response · elicit?])
+
+    Fanout --> SP[search places]
+    Fanout --> GW[getWeather<br/>in-code city/month lookup]
+    Fanout --> GPD[get place details]
+    Fanout --> UPI[updateItinerary<br/>set state.picked_places from named places]
+    Fanout --> STC[saveTripToCalendar<br/>Google OAuth · URL-mode elicit]
+
+    SP --> LLM
+    GW --> LLM
+    GPD --> LLM
+    UPI --> LLM
+    STC --> LLM
+
+    classDef nodeStyle fill:transparent,color:#000000,stroke:#8a99a0,stroke-width:2px
+    class IN,LLM,Decision,Fanout,SP,GW,GPD,UPI,STC,Done nodeStyle
+```
+
+Notes:
+
+- **`searchPois`** runs hybrid retrieval: city TAG filter + KNN over an embedding of the user's interest descriptors. The `location` field on the POI hashes is GEO-indexed but never queried with a GEO filter at runtime.
+- **`getWeather`** is a local lookup in `weather-repository.ts` — no API call.
+- **`saveTripToCalendar`** is the one tool that triggers an elicit *from inside `TravelAgent`*: when no cached Google token exists, the tool returns `needsAuth: true` and emits a URL-mode `state.elicit` carrying the OAuth start URL. The adapter (MCP) handles the OAuth round-trip; on the next graph invocation the tool sees the cached token and proceeds.
+
+---
+
+## FollowUp — internal flow
+
+One structured-output LLM call drives everything. Extracts current-turn slots from the full conversation history, decides whether to elicit, generates `suggestedActions[]`, and persists.
+
+```mermaid
+flowchart LR
+    IN([node enters]) --> LLM[single LLM call · structured output:<br/>slots · needsMoreInfo · response · followups]
+    LLM --> ELI{needsMoreInfo<br/>AND not<br/>userDeclinedElicit?}
+    ELI -- yes --> BE[buildElicit · construct<br/>ElicitSpec from missingFields<br/>+ state.preferences defaults]
+    ELI -- no --> SK[skip elicit]
+    BE --> PSV[persist:<br/>ensureDraft Redis<br/>appendTurn AMS · fire-and-forget]
+    SK --> PSV
+    PSV --> OUT([state delta:<br/>response · suggestedActions ·<br/>elicit?])
+
+    classDef nodeStyle fill:transparent,color:#000000,stroke:#8a99a0,stroke-width:2px
+    class IN,LLM,ELI,BE,SK,PSV,OUT nodeStyle
+```
+
+`userDeclinedElicit` is a one-shot flag the MCP adapter sets on `decline` so the graph doesn't re-elicit the same slots on the immediate next turn.
 
 ---
 
 ## Where graph elements hook into the UI
 
+`streamPlannerTurn` emits per-node deltas via callbacks; `chat.ts` translates each into an `@ag-ui/core` event.
+
 | Element | Triggers UI render | AG-UI event |
 |---|---|---|
-| `RouteIntent` enters | sidebar tool-row: yellow dot | `on_chain_start` |
-| `RouteIntent` exits | sidebar tool-row: green dot; canvas patches `state.preferences` | `on_chain_end` |
-| `FetchRecs` enters/exits | sidebar tool-row + POI grid renders on `state.pois` update | `on_chain_start`/`on_chain_end` |
-| `FetchWeather` enters/exits | sidebar tool-row + weather card renders on `state.weather` update | `on_chain_start`/`on_chain_end` |
-| `FinalizePlan` exits | follow-up chips render from `state.suggestedActions[]`; agent summary text appears | `on_chain_end` |
-| `FinalizeElicit` exits | chip card renders from `state.elicit.requestedSchema` | `on_chain_end` |
-
-A frontend dev in the audience can trace (a) the graph node, (b) the AG-UI event it emits, (c) the React component that re-renders.
+| Graph run starts | sidebar tool-row scaffold | `RUN_STARTED` |
+| `ContextRetriever` enters | sidebar tool-row entry | `STEP_STARTED` |
+| `ContextRetriever` delta | canvas patches `state.preferences` / `state.conversation` | `STATE_SNAPSHOT` |
+| `ContextRetriever` exits | tool-row entry resolves | `STEP_FINISHED` |
+| `TravelAgent` enters/deltas | per-tool sidebar dots, POI grid renders on `state.pois`, weather card on `state.weather` | `STEP_STARTED` / `STATE_SNAPSHOT` per delta |
+| `TravelAgent` exits | tool-row resolves | `STEP_FINISHED` |
+| `FollowUp` delta — `suggestedActions` | follow-up chips render | `STATE_SNAPSHOT` |
+| `FollowUp` delta — `elicit` | chip card renders from `requestedSchema` | `STATE_SNAPSHOT` |
+| Graph run ends | sidebar tool-row resolves | `RUN_FINISHED` |
 
 ---
 
-## Why one graph, no router, no ReAct
+## Why three nodes and not one ReAct agent
 
-An earlier design split planning and trip-prep into two separate agents under a `route_turn` classifier. That collapsed once the same shared state (`destination`, `weather`, `pois`) served both surfaces. Then the single ReAct agent itself collapsed too, once it became clear there were no autonomous tool-call decisions for the LLM to make — the workflow is deterministic (extract → branch → fetch → finalize). Plain nodes are clearer to debug and trace than a ReAct loop, and the visible AG-UI node events give the audience something concrete to point at on stage.
+The graph could have been a single `createReactAgent` call — `TravelAgent` already covers the LLM-driven tool dispatch. The reason for the wrap is that **two boundary concerns don't belong inside the ReAct loop**:
+
+- **Read concerns** (`ContextRetriever`) — every turn needs the same hydration of preferences + transcript + trip draft *before* the LLM sees the user message. Doing it inside the agent's system prompt would mean re-running the loads on every tool-call iteration. The pre-step is cleaner.
+- **Write + elicit concerns** (`FollowUp`) — extracting slots, computing `needsMoreInfo`, building the elicit schema, and writing to AMS + Redis all happen *after* the agent has decided what to do. Mixing this with tool dispatch confuses the LLM (it starts trying to "extract" things mid-turn). One node, one structured-output call, one persist.
+
+Both boundary nodes are deterministic-ish and short. `TravelAgent` is where the interesting LLM autonomy lives.

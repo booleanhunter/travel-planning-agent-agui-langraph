@@ -1,0 +1,72 @@
+%%{init: {
+    "theme": "base",
+    "themeVariables": {
+        "fontFamily": "Space Grotesk, Inter, system-ui, sans-serif",
+        "fontSize": "14px",
+        "background": "#ffffff",
+        "primaryColor": "#ffffff",
+        "primaryTextColor": "#091a23",
+        "primaryBorderColor": "#091a23",
+        "lineColor": "#091a23",
+        "secondaryColor": "#f1f3f5",
+        "tertiaryColor": "#f8f9fa"
+    },
+    "flowchart": { "curve": "basis", "padding": 12 }
+}}%%
+flowchart LR
+    User["<b>User query</b><br/>&quot;Plan a trip to Bangalore&quot;"]:::userQuery
+
+    subgraph Frontend["<b>Frontend (React + AG-UI client)</b>"]
+        direction TB
+        Chat["Chat sidebar"]:::uiPanel
+        Grid["POI grid"]:::uiPanel
+        Itin["Composed itinerary"]:::uiPanel
+        Drawer["Memory drawer"]:::uiPanel
+        Wx["Weather card"]:::uiPanel
+    end
+
+    AGUI["<b>AG-UI</b><br/>HTTP /api/chat<br/>user messages in<br/>state &amp; tool events out"]:::aguiNode
+
+    subgraph Backend["<b>LangGraph backend</b>"]
+        direction TB
+        Ctx["<b>ContextRetriever</b><br/>Hydrate state from Redis + AMS"]:::graphNode
+        TA["<b>TravelAgent</b><br/>ReAct loop with bound tools"]:::graphNode
+        FU["<b>FollowUp</b><br/>Extract slots, elicit, suggest"]:::graphNode
+        Ctx --> TA --> FU
+
+        subgraph Tools["TravelAgent tools (bound)"]
+            direction TB
+            T1["searchPois"]:::tool
+            T2["getPoiDetails"]:::tool
+            T3["getWeather"]:::tool
+            T4["updateItinerary"]:::tool
+            T5["saveTripToCalendar"]:::tool
+        end
+        TA -. tool calls .-> Tools
+    end
+
+    subgraph Stores["<b>Data stores</b>"]
+        direction TB
+        Redis["<b>Redis</b><br/>POI catalog (FT.SEARCH)<br/>Trip store"]:::store
+        AMS["<b>AMS</b><br/>Working + long-term memory<br/>Summary views"]:::store
+    end
+
+    User ==> Chat
+    Frontend <==> AGUI
+    AGUI <==> Backend
+    Ctx -. read .-> Stores
+    FU -. write .-> Stores
+
+    %% Class definitions — mirror the inspector's design tokens
+    classDef userQuery fill:#fff5f5,stroke:#e03131,stroke-width:2px,color:#091a23
+    classDef graphNode fill:#ffffff,stroke:#091a23,stroke-width:2px,color:#091a23
+    classDef tool fill:#f8f9fa,stroke:#091a23,stroke-width:1px,color:#091a23
+    classDef store fill:#f1f3f5,stroke:#091a23,stroke-width:1.5px,color:#091a23
+    classDef aguiNode fill:#e5f6ff,stroke:#0a6e9c,stroke-width:2px,color:#0a6e9c
+    classDef uiPanel fill:#ffffff,stroke:#e1e5e9,stroke-width:1px,color:#091a23
+
+    %% Subgraph styling
+    style Backend fill:#fafbfc,stroke:#c8ced3,stroke-width:1px
+    style Tools fill:#f1f3f5,stroke:#c8ced3,stroke-width:1px,stroke-dasharray:4 4
+    style Stores fill:#fafbfc,stroke:#c8ced3,stroke-width:1px
+    style Frontend fill:#fafbfc,stroke:#c8ced3,stroke-width:1px
