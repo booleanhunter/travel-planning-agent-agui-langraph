@@ -1,7 +1,7 @@
 import { SCHEMA_FIELD_TYPE, SCHEMA_VECTOR_FIELD_ALGORITHM, type RediSearchSchema } from 'redis';
 import { getRedis } from '#lib/redis.js';
 import { embedToBuffer } from '#modules/ai/helpers/llm.js';
-import type { City, POI, POICategory } from '../types.js';
+import type { City, POI, POICategory } from '../catalog.js';
 
 export const INDEX_NAME = 'idx:pointsOfInterest';
 export const KEY_PREFIX = 'pointsOfInterest:';

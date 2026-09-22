@@ -2,22 +2,20 @@
  * seed-user-data.js — ingest persona data from datasets/users.json.
  *
  * For each user defined in the dataset:
- *   - Wipes the user's existing long-term memories (idempotent reseed).
- *   - Writes preference memories to AMS long-term memory.
+ *   - Writes preference memories to Agent Memory long-term memory.
  *   - For each past trip:
  *       - Joins pickedPoiIds against datasets/pois.json to materialize full POI
  *         records.
  *       - Writes a complete trip record to Redis trip-store (HASH) so the
  *         memory drawer can list it. Listing is by KEYS pattern; no index SET.
- *       - ALSO writes a trip-summary memory to AMS with topics
- *         ['trip_history', city, ...interests] so the future getPreviousTrips
- *         tool can find it via semantic search.
+ *       - ALSO writes a trip-summary memory to Agent Memory with topics
+ *         ['trip_history', destination, ...interests] so the future
+ *         getPreviousTrips tool can find it via semantic search.
  *
- * Memory IDs are minted client-side as ULIDs (AMS uses the same format for
- * memories it auto-extracts from chat) so seeded records are indistinguishable
- * from auto-extracted ones — same schema, same key namespace, same API
- * behavior. To stay idempotent, each run wipes the user's existing long-term
- * memories before recreating them.
+ * Memory record IDs are DETERMINISTIC (`<userId>:pref:<n>`, `<userId>:trip:<id>`).
+ * The SDK's bulkCreateLongTermMemories treats `id` as a client-provided key for
+ * idempotent creation, so re-running the seed overwrites the same records
+ * rather than duplicating them — no separate wipe step needed.
  *
  * Reads:
  *   server/datasets/users.json
@@ -25,7 +23,10 @@
  *
  * Writes:
  *   Redis HASHes: user:{userId}:trip:{tripId}
- *   AMS long-term memories (preferences + trip summaries)
+ *   Agent Memory long-term memories (preferences + trip summaries)
+ *
+ * Requires (in .env): AGENT_MEMORY_SERVER_URL, AGENT_MEMORY_STORE_ID,
+ * AGENT_MEMORY_API_KEY.
  *
  * Run: npm run seed:users -w server
  */
@@ -34,8 +35,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from 'redis';
-import { MemoryAPIClient } from 'agent-memory-client';
-import { ulid } from 'ulid';
+import { AgentMemory } from '@redis-iris/agent-memory';
 import dotenv from 'dotenv';
 
 // ----- env loading ---------------------------------------------------------
@@ -44,7 +44,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(HERE, '../../../.env'), quiet: true });
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const AMS_URL = process.env.AGENT_MEMORY_SERVER_URL ?? 'http://localhost:8000';
+const AGENT_MEMORY_SERVER_URL = process.env.AGENT_MEMORY_SERVER_URL;
+const AGENT_MEMORY_STORE_ID = process.env.AGENT_MEMORY_STORE_ID;
+const AGENT_MEMORY_API_KEY = process.env.AGENT_MEMORY_API_KEY;
 
 const USERS_PATH = resolve(HERE, '../../datasets/users.json');
 const POIS_PATH = resolve(HERE, '../../datasets/pois.json');
@@ -74,80 +76,47 @@ async function writeTrip(redis, userId, trip, pickedPois) {
 }
 
 /**
- * Write a batch of MemoryRecords to AMS long-term memory. AMS's create
- * endpoint requires an `id` on every record; we mint a ULID per record so
- * seeded memories are indistinguishable from the ULIDs AMS uses for memories
- * it auto-extracts from chat.
+ * Write long-term memory records to Agent Memory. Each record already carries a
+ * deterministic `id` and `ownerId`, so this is a plain bulk create.
  */
-async function writeMemories(ams, userId, records) {
-    const enriched = records.map((record) => ({
-        ...record,
-        id: ulid(),
-        user_id: userId,
-    }));
-    try {
-        await ams.createLongTermMemory(enriched);
-    } catch (err) {
-        // The SDK's error message can be "[object Object]" for FastAPI 422
-        // responses — re-do the request manually so we see the full body.
-        if (err.statusCode === 422) {
-            const url = new URL('/v1/long-term-memory/', AMS_URL);
-            const res = await fetch(url.toString(), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ memories: enriched }),
-            });
-            console.error('AMS rejected — status:', res.status);
-            console.error('AMS rejected — body:', await res.text());
-            console.error('Records sent:', JSON.stringify(enriched, null, 2).slice(0, 800));
-        }
-        throw err;
-    }
+async function writeMemories(agentMemory, records) {
+    if (!records.length) return;
+    await agentMemory.bulkCreateLongTermMemories({ memories: records });
 }
 
-/**
- * Sanitize a POI name so AMS accepts it as an entity.
- * AMS rejects commas in entity values (they're used as internal delimiters).
- * We take the substring before the first comma — usually the canonical name
- * without the location/branch suffix. Example:
- *   "Karavalli - Vivanta Bengaluru, Residency Road" → "Karavalli - Vivanta Bengaluru"
- */
-function sanitizeEntity(name) {
-    return name.split(',')[0].trim();
-}
+// Memory record IDs may contain only alphanumerics and hyphens (server rule),
+// so the deterministic keys use hyphens as separators — no colons.
 
-/** Build a trip-summary MemoryRecord for AMS. */
-function tripSummaryMemory(userId, trip, picks) {
+/** Build a preference memory record with a deterministic id. */
+function preferenceMemory(userId, memory, index) {
     return {
-        user_id: userId,
-        topics: ['trip_history', trip.destination ?? trip.city, ...trip.interests],
-        entities: picks.map((poi) => sanitizeEntity(poi.name)),
-        text: trip.summary,
+        id: `${userId}-pref-${index}`,
+        text: memory.text,
+        ownerId: userId,
+        topics: memory.topics ?? [],
     };
 }
 
-/**
- * Wipe a user's long-term memories before reseeding. AMS's search endpoint
- * caps limit at 100, so we drain in pages until empty.
- */
-async function wipeUserMemories(ams, userId) {
-    let total = 0;
-    for (;;) {
-        const result = await ams.searchLongTermMemory({
-            text: '',
-            userId: { eq: userId },
-            limit: 100,
-        });
-        const ids = result.memories.map((m) => m.id);
-        if (!ids.length) return total;
-        await ams.deleteLongTermMemories(ids);
-        total += ids.length;
-    }
+/** Build a trip-summary memory record with a deterministic id. */
+function tripSummaryMemory(userId, trip) {
+    return {
+        id: `${userId}-trip-${trip.tripId}`,
+        text: trip.summary,
+        ownerId: userId,
+        topics: ['trip_history', trip.destination ?? trip.city, ...(trip.interests ?? [])],
+    };
 }
 
 // ----- Entry point ----------------------------------------------------------
 
 async function main() {
+    if (!AGENT_MEMORY_SERVER_URL || !AGENT_MEMORY_STORE_ID || !AGENT_MEMORY_API_KEY) {
+        throw new Error(
+            'Missing Agent Memory env vars: set AGENT_MEMORY_SERVER_URL, ' +
+                'AGENT_MEMORY_STORE_ID, and AGENT_MEMORY_API_KEY in .env',
+        );
+    }
+
     const usersJson = JSON.parse(await readFile(USERS_PATH, 'utf8'));
     const poisJson = JSON.parse(await readFile(POIS_PATH, 'utf8'));
     const poisById = new Map(poisJson.pois.map((poi) => [poi.id, poi]));
@@ -157,20 +126,23 @@ async function main() {
     redis.on('error', (err) => console.error('Redis error:', err));
     await redis.connect();
 
-    const ams = new MemoryAPIClient({ baseUrl: AMS_URL });
+    const agentMemory = new AgentMemory({
+        serverURL: AGENT_MEMORY_SERVER_URL,
+        storeId: AGENT_MEMORY_STORE_ID,
+        apiKey: AGENT_MEMORY_API_KEY,
+    });
 
     for (const user of usersJson.users) {
         console.log(`\n=== ${user.displayName} (${user.userId}) ===`);
 
-        // 0. Wipe existing long-term memories so re-runs are idempotent.
-        const wiped = await wipeUserMemories(ams, user.userId);
-        if (wiped) console.log(`  ✓ wiped ${wiped} existing memories`);
-
-        // 1. Preference memories → AMS
-        await writeMemories(ams, user.userId, user.memories);
+        // 1. Preference memories → Agent Memory (deterministic ids → idempotent)
+        await writeMemories(
+            agentMemory,
+            user.memories.map((memory, index) => preferenceMemory(user.userId, memory, index)),
+        );
         console.log(`  ✓ wrote ${user.memories.length} preference memories`);
 
-        // 2. Past trips → Redis trip-store + AMS trip-summary memory
+        // 2. Past trips → Redis trip-store + Agent Memory trip-summary memory
         for (const trip of user.pastTrips) {
             const picks = [];
             const missing = [];
@@ -184,8 +156,8 @@ async function main() {
             }
 
             await writeTrip(redis, user.userId, trip, picks);
-            await writeMemories(ams, user.userId, [tripSummaryMemory(user.userId, trip, picks)]);
-            console.log(`  ✓ ${trip.tripId}: ${picks.length} picks → trip-store + AMS`);
+            await writeMemories(agentMemory, [tripSummaryMemory(user.userId, trip)]);
+            console.log(`  ✓ ${trip.tripId}: ${picks.length} picks → trip-store + Agent Memory`);
         }
     }
 

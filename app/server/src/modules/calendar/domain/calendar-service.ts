@@ -5,7 +5,7 @@
  * fetch (no `googleapis` SDK dep — the call is one POST).
  */
 
-import { CITY_DISPLAY_NAMES } from '#modules/places/types.js';
+import { CITY_DISPLAY_NAMES } from '#modules/places/catalog.js';
 import type { PastTrip } from '#modules/trips/types.js';
 
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';

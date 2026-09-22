@@ -43,11 +43,8 @@ router.post('/load-trip', async (req, res) => {
             res.status(404).json({ error: 'trip not found' });
             return;
         }
-        const conv = await getConversation(trip.tripId);
-        res.json({
-            trip,
-            conversationHistory: conv?.messages ?? [],
-        });
+        const conversationHistory = await getConversation(trip.tripId);
+        res.json({ trip, conversationHistory });
     } catch (err) {
         res.status(500).json({ error: (err as Error).message });
     }

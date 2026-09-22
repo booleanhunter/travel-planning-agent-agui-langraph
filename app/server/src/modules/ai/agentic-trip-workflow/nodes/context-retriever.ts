@@ -3,9 +3,9 @@
  *
  *   - Redis trip-store HASH `user:<userId>:trip:<tripId>`
  *       → destination, dates, interests, pickedPois
- *   - AMS preferences (cross-session semantic memory)
+ *   - Agent Memory long-term memory (cross-session facts)
  *       → preferences
- *   - AMS working memory for `tripId`
+ *   - Agent Memory session for `tripId`
  *       → conversationHistory (full — no caps)
  *
  * No client request body is needed for slot data; the server is the source
@@ -24,16 +24,11 @@ export async function contextRetriever(
         `\n📥 [context-retriever] turn — user=${state.userId} tripId=${state.tripId} msg="${state.userMessage.slice(0, 80)}"`,
     );
 
-    const [preferences, conv, trip] = await Promise.all([
+    const [preferences, conversationHistory, trip] = await Promise.all([
         getPreferences(state.userId).catch(() => undefined),
-        getConversation(state.tripId).catch(() => null),
+        getConversation(state.tripId).catch(() => []),
         getTrip(state.userId, state.tripId).catch(() => null),
     ]);
-
-    const conversationHistory = (conv?.messages ?? []).map((message) => ({
-        role: message.role,
-        content: message.content,
-    }));
 
     const patch: Partial<AgentStateType> = {
         preferences,

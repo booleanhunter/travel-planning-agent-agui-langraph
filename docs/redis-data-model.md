@@ -1,13 +1,12 @@
 # Redis Data Model
 
-Reference for how Redis stores data in the demo. One Redis Stack instance, two logical namespaces:
+Reference for how the demo stores data. Redis holds the POI catalogue and trip records; memory lives in the **Redis Agent Memory (Iris)** hosted service, reached over HTTP via the `@redis-iris/agent-memory` SDK — not in this Redis instance.
 
-| Namespace | Purpose | Owner |
+| Store | Purpose | Owner |
 |---|---|---|
-| `idx:pointsOfInterest` + `pointsOfInterest:{placeId}` | Hybrid search index over enriched places | seed script (writes) + `FetchRecs` node (reads) |
-| Agent Memory Server keys (own prefix) | Working memory (conversation) + long-term semantic + long-term episodic | AMS service |
-
-The two namespaces share one Redis instance but never read each other's keys directly. The boundary is a service contract, not a data layout.
+| `idx:pointsOfInterest` + `pointsOfInterest:{placeId}` | Hybrid search index over enriched places | seed script (writes) + `searchPois` tool (reads) |
+| `user:{userId}:trip:{tripId}` | Trip records — destination, dates, interests, picked places, status | `trips-repository` (Redis HASH) |
+| Agent Memory (Iris) | Session transcript + long-term facts | hosted service, via `@redis-iris/agent-memory` |
 
 ---
 
@@ -49,37 +48,40 @@ flowchart LR
 
 ---
 
-## 2. Agent Memory Server (AMS)
+## 2. Agent Memory (Iris)
 
-Separate service, separate key prefix, same Redis instance. AMS owns its own schema; the demo only talks to it through its HTTP API (`config.agentMemoryServer.url`).
+A hosted service reached through the `@redis-iris/agent-memory` SDK (`serverURL` + `storeId` + bearer `apiKey`). Not part of this Redis instance — the demo talks to it only through the SDK. Two stores, mapped from our domain concepts:
 
-| Tier | What it stores | When written | When read |
-|---|---|---|---|
-| **Working memory** | Per-session conversation transcript. Auto-summarized when long. | `Finalize*` nodes append the turn (fire-and-forget) | `RouteIntent` (recent context) |
-| **Long-term · semantic** | Vectorised preferences/habits extracted from past conversations (e.g. *"always packs a power bank"*, *"prefers indie cafés"*) | AMS extraction job over working memory | `RouteIntent` → projects into `state.preferences` (budget, group size, recurring interests) |
-| **Long-term · episodic** | Trip records — `{ sessionId, destination, dates, summary }` | At end-of-session or when explicitly persisted via `/api/user/save-trip` | memory drawer's "Past trips" list, "Load past trip" rehydrate |
+| Store | What it holds | Domain mapping | Written | Read |
+|---|---|---|---|---|
+| **Session (working memory)** | Verbatim conversation events, ordered by ingestion | session = `tripId`, actor = `userId` | `followUp` → `appendTurn`, one `addSessionEvent` per message (awaited) | `contextRetriever` → `state.conversationHistory` |
+| **Long-term memory** | Facts + trip-history summaries, categorized by `topics` | `ownerId` = `userId` | seed script + `archiveTripToMemory` → `bulkCreateLongTermMemories` | `contextRetriever` → `state.preferences` via `searchLongTermMemory` |
 
-### Critical boundary
+### Scoping
 
-The graph never persists trip state in AMS as raw fields. AMS observes the *conversation* through its working-memory ingestion, and its extraction job decides whether a fact is a stable preference worth promoting to long-term semantic memory. The trip itself becomes an episodic record via an explicit save call at end-of-session.
+- The **transcript** is one session per trip. `getSessionMemory(tripId)` returns events in order; the server keeps event order, so no client-side sequencing is needed. `deleteSessionMemory(tripId)` clears it on Reset.
+- **Preferences** search filters `ownerId = userId` AND `topics ∈ {travel_preferences, interests, budget}` (`filterOp: 'all'`), which keeps `trip_history` records out of the preference roll-up.
+- Long-term records use **deterministic ids** (`<userId>:pref:<n>`, `<userId>:trip:<tripId>`), so re-seeding overwrites rather than duplicating.
 
 ### "Load past trip" flow
 
-The memory drawer calls `POST /api/user/load-trip` with a `tripId`. The handler fetches the AMS episodic record + the session's working-memory transcript and returns both to the client. The UI re-renders both the chat transcript and the canvas (POIs, itinerary) from that single payload. No LangGraph checkpoint involved — the graph has no notion of "loading a past run" because there's no checkpointer.
+The memory drawer calls `POST /api/user/load-trip` with a `tripId`. The handler reads the trip HASH from Redis plus that trip's session transcript from Agent Memory and returns both. The UI re-renders the chat transcript and the canvas from that single payload. No LangGraph checkpoint involved — the graph has no notion of "loading a past run" because there's no checkpointer.
 
 ### Why no LangGraph checkpointer
 
-Earlier designs used `RedisSaver` to persist graph state per `thread_id` for the `interrupt()`/resume mechanic that paused mid-elicitation. The current design returns elicit specs as final state instead of pausing the graph — so each graph run is one-shot, state lives on the client between turns, and there's nothing to checkpoint. AMS is the single source of truth for conversation history.
+Earlier designs used `RedisSaver` to persist graph state per `thread_id` for the `interrupt()`/resume mechanic that paused mid-elicitation. The current design returns elicit specs as final state instead of pausing the graph — so each graph run is one-shot and there's nothing to checkpoint. Agent Memory is the single source of truth for conversation history.
 
 ---
 
 ## Summary cheatsheet
 
 ```
-pointsOfInterest:{placeId}   →  HASH       — enriched place + embedding (durable; re-seed to refresh)
-idx:pointsOfInterest         →  FT index   — hybrid city TAG + KNN over vector
+pointsOfInterest:{placeId}   →  Redis HASH     — enriched place + embedding (durable; re-seed to refresh)
+idx:pointsOfInterest         →  Redis FT index — hybrid city TAG + KNN over vector
+user:{id}:trip:{tripId}      →  Redis HASH     — trip record (draft or completed)
 
-ams:*                        →  AMS-owned  — working memory (conversation) + long-term semantic + long-term episodic
+Agent Memory session=tripId  →  Iris (hosted)  — verbatim conversation events
+Agent Memory ownerId=userId  →  Iris (hosted)  — long-term facts + trip history
 ```
 
-One instance, two contracts. POI catalogue is in the hybrid index, cross-session memory + conversation is in AMS — and the only bridge between them is `RouteIntent` reading AMS at turn start.
+Redis holds the catalogue and the trip; Agent Memory holds what the agent remembers. The bridge between them is `contextRetriever`, which reads both at the start of every turn.

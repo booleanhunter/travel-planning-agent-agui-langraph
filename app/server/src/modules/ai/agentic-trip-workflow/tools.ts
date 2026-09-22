@@ -5,7 +5,7 @@ import { config } from '#config';
 import { commitPicks, getTrip } from '#modules/trips/domain/trips-service.js';
 import { searchPois } from '#modules/places/domain/places-service.js';
 import { getWeather } from '#modules/weather/domain/weather-service.js';
-import { CitySchema, type POI, type City } from '#modules/places/types.js';
+import { CitySchema, INTEREST_VALUES, type POI, type City } from '#modules/places/catalog.js';
 import type { Weather } from '#modules/weather/types.js';
 import {
     getValidToken,
@@ -52,19 +52,6 @@ export function makeUpdateItineraryTool(state: AgentStateType, onApplied: (picks
         },
     );
 }
-
-// Canonical interest values matching the chip-card options. Keep in sync with
-// follow-up.ts:INTEREST_OPTIONS — the LLM passes from this set so FollowUp's
-// rule-based elicit knows whether `interests` is already filled.
-const INTEREST_VALUES = [
-    'food',
-    'landmarks',
-    'offbeat',
-    'slow',
-    'outdoors',
-    'nightlife',
-    'culture',
-] as const;
 
 /**
  * Build the `searchPois` tool. Wraps the existing vector-search service.

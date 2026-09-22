@@ -19,26 +19,15 @@ import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages
 import { getChatModel } from '#modules/ai/helpers/llm.js';
 import { appendTurn } from '#modules/user/domain/user-service.js';
 import { ensureDraft } from '#modules/trips/domain/trips-service.js';
-import { CitySchema, CITY_DISPLAY_NAMES, type City } from '#modules/places/types.js';
+import {
+    CitySchema,
+    CITY_DISPLAY_NAMES,
+    INTEREST_OPTIONS,
+    INTEREST_VALUES,
+    type City,
+} from '#modules/places/catalog.js';
 import type { AgentStateType } from '../state.js';
 import type { ElicitPrimitiveSchema, ElicitSpec } from '../types.js';
-
-// ----- Interest options (kept in sync with tools.ts INTEREST_VALUES) ----------
-
-const INTEREST_OPTIONS = [
-    { value: 'food', label: 'Food & restaurants' },
-    { value: 'landmarks', label: 'Famous landmarks' },
-    { value: 'offbeat', label: 'Off the beaten path' },
-    { value: 'slow', label: 'Slow & easygoing' },
-    { value: 'outdoors', label: 'Outdoors & nature' },
-    { value: 'nightlife', label: 'Nightlife & social' },
-    { value: 'culture', label: 'Arts & culture' },
-];
-
-const INTEREST_VALUES = INTEREST_OPTIONS.map((option) => option.value) as [
-    string,
-    ...string[],
-];
 
 // ----- Structured output schema ----------------------------------------------
 
@@ -242,9 +231,12 @@ export async function followUp(state: AgentStateType): Promise<Partial<AgentStat
         }
     }
 
-    // Persist this turn's user + assistant message to AMS working memory.
+    // Persist this turn's user + assistant message to the trip's session.
+    // Awaited: the next turn's contextRetriever hydrates history from this
+    // session, so the events must land before the turn returns (each message
+    // is a separate addSessionEvent call).
     if (state.response) {
-        appendTurn(state.tripId, state.userId, [
+        await appendTurn(state.tripId, state.userId, [
             { role: 'user', content: state.userMessage },
             { role: 'assistant', content: state.response },
         ]).catch((err) => console.error('[follow-up] appendTurn failed:', (err as Error).message));

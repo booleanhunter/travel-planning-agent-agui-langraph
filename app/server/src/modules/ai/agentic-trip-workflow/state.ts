@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CitySchema, POISchema } from '#modules/places/types.js';
+import { CitySchema, POISchema } from '#modules/places/catalog.js';
 import { WeatherSchema } from '#modules/weather/types.js';
 import type { UserPreferences } from '#modules/user/types.js';
 import type { ElicitSpec } from './types.js';

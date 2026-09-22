@@ -9,7 +9,7 @@ The same demo is reused for **MCP Dev Summit** — *"Building Interactive Tools 
 - **Frontend** — React 19 + Vite + TypeScript, CopilotKit (AG-UI), React-Leaflet over OpenStreetMap, vanilla CSS
 - **Backend** — Node.js 24 + Express 5 + LangGraph.js, OpenAI GPT-4o-mini
 - **External APIs** — Google Places API (POI discovery), Tavily (weather + products)
-- **Memory** — Redis Agent Memory Server, Redis Stack (both via Docker)
+- **Memory** — Redis Agent Memory (Iris) via the `@redis-iris/agent-memory` SDK (hosted); Redis via Docker for the POI index + trip-store
 
 Full architecture in [`docs/diagrams/`](../docs/diagrams/).
 
@@ -19,7 +19,7 @@ Full architecture in [`docs/diagrams/`](../docs/diagrams/).
 
 - Node.js >= 24
 - Docker (only needed once API keys are wired — see `USE_MOCKS=false`)
-- API keys for the full experience: `OPENAI_API_KEY`, `GOOGLE_MAPS_API_KEY`, `TAVILY_API_KEY`
+- API keys for the full experience: `OPENAI_API_KEY`, `AGENT_MEMORY_SERVER_URL` / `AGENT_MEMORY_STORE_ID` / `AGENT_MEMORY_API_KEY`, `GOOGLE_MAPS_API_KEY`, `TAVILY_API_KEY`
 
 ### Setup
 
@@ -37,7 +37,7 @@ Open [http://localhost:5173](http://localhost:5173). Try: *"Plan a trip to Banga
 
 By default the server runs with `USE_MOCKS=true`:
 
-- Agent Memory Server → in-process fixtures (`server/src/modules/memory/data/memory-mocks.ts`)
+- Agent Memory → not called (no `AGENT_MEMORY_*` values needed)
 - Google Places / Tavily → mocked responses (filled in per feature)
 - LangGraph checkpointer → `MemorySaver` (in-process, not Redis)
 
@@ -46,7 +46,7 @@ To switch to the full stack:
 ```bash
 cp .env.example .env       # fill in API keys
 echo "USE_MOCKS=false" >> .env
-npm run docker:up          # Redis + Agent Memory Server
+npm run docker:up          # Redis
 npm run dev
 ```
 
@@ -68,7 +68,7 @@ trip-itinerary-builder/
 ├── client/                  # Vite + React + TS frontend
 ├── server/                  # Node + Express + LangGraph backend
 ├── docs/                    # Talk outline, tech stack, diagrams, design references
-├── docker-compose.yaml      # Redis + Agent Memory Server
+├── docker-compose.yaml      # Redis
 ├── .env.example
 └── package.json             # workspace root
 ```

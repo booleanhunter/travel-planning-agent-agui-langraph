@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CitySchema, POISchema } from '#modules/places/types.js';
+import { CitySchema, POISchema } from '#modules/places/catalog.js';
 
 export const PastTripSchema = z.object({
     tripId: z.string(),

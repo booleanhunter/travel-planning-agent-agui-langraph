@@ -10,7 +10,7 @@ import type {
     ElicitRequestURLParams,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { CitySchema, POISchema } from '#modules/places/types.js';
+import { CitySchema, POISchema } from '#modules/places/catalog.js';
 import { WeatherSchema } from '#modules/weather/types.js';
 import {
     awaitOAuthCompletion,

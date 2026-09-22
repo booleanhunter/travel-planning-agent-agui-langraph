@@ -18,7 +18,14 @@ export const config = {
     embeddingModel: 'text-embedding-3-small' as const,
     openaiApiKey: required('OPENAI_API_KEY'),
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-    agentMemoryServerUrl: process.env.AGENT_MEMORY_SERVER_URL ?? 'http://localhost:8000',
+    // Redis Agent Memory (Iris) — hosted service reached via the
+    // @redis-iris/agent-memory SDK. serverURL + storeId + apiKey are issued
+    // for your Agent Memory service; there is no local default.
+    agentMemory: {
+        serverUrl: required('AGENT_MEMORY_SERVER_URL'),
+        storeId: required('AGENT_MEMORY_STORE_ID'),
+        apiKey: required('AGENT_MEMORY_API_KEY'),
+    },
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
     googleOauth: {
         clientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',

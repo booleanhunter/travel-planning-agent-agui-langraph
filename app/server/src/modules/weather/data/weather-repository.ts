@@ -1,4 +1,4 @@
-import type { City } from '#modules/places/types.js';
+import type { City } from '#modules/places/catalog.js';
 import type { Weather } from '../types.js';
 
 type Forecast = Omit<Weather, 'city' | 'month'>;

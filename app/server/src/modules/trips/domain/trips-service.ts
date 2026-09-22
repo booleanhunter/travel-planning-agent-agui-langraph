@@ -1,4 +1,4 @@
-import type { POI, City } from '#modules/places/types.js';
+import type { POI, City } from '#modules/places/catalog.js';
 import { getPoiById } from '#modules/places/domain/places-service.js';
 import { saveLongTermMemory, deleteWorkingMemory } from '#modules/user/domain/user-service.js';
 import { clearToken as clearGoogleToken } from '#modules/calendar/domain/google-oauth-service.js';
@@ -86,8 +86,8 @@ export function listPastTrips(userId: string): Promise<PastTrip[]> {
 }
 
 /**
- * Strip commas from POI names so AMS accepts them as entity values
- * (AMS uses commas as internal delimiters and rejects them).
+ * Take the substring before the first comma — usually the canonical place name
+ * without its location suffix — so the generated summary text stays readable.
  */
 function sanitizeEntity(name: string): string {
     return name.split(',')[0].trim();
@@ -120,18 +120,23 @@ function generateTripSummary(trip: PastTrip): string {
 }
 
 /**
- * Archive a completed trip into AMS long-term memory as a `trip_history`
- * memory. Idempotent — uses a deterministic id; re-archiving overwrites.
+ * Archive a completed trip into long-term memory as a `trip_history` memory.
+ * Idempotent — the deterministic id makes re-archiving a no-op overwrite.
  * Mirrors what the seed script writes for past trips.
+ *
+ * The picked-POI names live in the summary text (see generateTripSummary); the
+ * SDK's memory record has no separate entities field, so they aren't stored as
+ * a structured list. They were write-only decoration before — nothing read
+ * them back — so nothing is lost for retrieval.
  */
 export async function archiveTripToMemory(userId: string, trip: PastTrip): Promise<void> {
     await saveLongTermMemory([
         {
-            id: `${userId}:${trip.tripId}`,
-            user_id: userId,
-            topics: ['trip_history', trip.destination, ...trip.interests],
-            entities: trip.pickedPois.map((poi) => sanitizeEntity(poi.name)),
+            // IDs allow only alphanumerics and hyphens (server rule) — no colons.
+            id: `${userId}-${trip.tripId}`,
+            userId,
             text: generateTripSummary(trip),
+            topics: ['trip_history', trip.destination, ...trip.interests],
         },
     ]);
 }
@@ -139,11 +144,11 @@ export async function archiveTripToMemory(userId: string, trip: PastTrip): Promi
 /**
  * Reset the user's working planning slot:
  *   - delete the trip-store HASH for this tripId (working trip is gone)
- *   - wipe AMS working memory for the tripId (conversation cleared)
+ *   - delete the Agent Memory session for the tripId (conversation cleared)
  *   - clear the Google OAuth token (next saveTripToCalendar re-authorizes)
  *
  * Past trips (status: completed) are NOT touched — they live under different
- * tripIds and remain in trip-store + AMS long-term.
+ * tripIds and remain in trip-store + Agent Memory long-term.
  */
 export async function resetWorkingTrip(userId: string, tripId: string): Promise<void> {
     await Promise.all([

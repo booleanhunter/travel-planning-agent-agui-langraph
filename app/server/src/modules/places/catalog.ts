@@ -112,3 +112,34 @@ export const POISchema = z.object({
     score: z.number().optional(),
 });
 export type POI = z.infer<typeof POISchema>;
+
+/**
+ * Canonical interest tags — the vocabulary a user picks from to describe the
+ * kind of trip they want. Distinct from POICategory (which classifies places):
+ * interests are the query/preference taxonomy used to search the catalog and
+ * to describe recurring user preferences.
+ *
+ * Single source of truth. Consumers:
+ *   - follow-up node   → elicit chip labels + slot-extraction enum
+ *   - searchPois tool  → interest arg enum
+ *   - memory repository → allowlist when rolling topics into recurringInterests
+ *
+ * `value` is the stored tag; `label` is the UI-facing chip text.
+ */
+export const INTEREST_OPTIONS = [
+    { value: 'food', label: 'Food & restaurants' },
+    { value: 'landmarks', label: 'Famous landmarks' },
+    { value: 'offbeat', label: 'Off the beaten path' },
+    { value: 'slow', label: 'Slow & easygoing' },
+    { value: 'outdoors', label: 'Outdoors & nature' },
+    { value: 'nightlife', label: 'Nightlife & social' },
+    { value: 'culture', label: 'Arts & culture' },
+] as const;
+
+/** Interest tags as a Zod-friendly tuple, e.g. for `z.enum(INTEREST_VALUES)`. */
+export const INTEREST_VALUES = INTEREST_OPTIONS.map((option) => option.value) as [
+    string,
+    ...string[],
+];
+
+export type Interest = (typeof INTEREST_OPTIONS)[number]['value'];

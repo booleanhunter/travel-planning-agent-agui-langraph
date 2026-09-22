@@ -9,7 +9,7 @@
  */
 
 import { getRedis } from '#lib/redis.js';
-import type { POI, City } from '#modules/places/types.js';
+import type { POI, City } from '#modules/places/catalog.js';
 import type { PastTrip } from '../types.js';
 
 interface TripDraftUpsert {

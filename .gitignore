@@ -33,6 +33,7 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/launch.json
 docs/.obsidian/
+.claude/
 
 # Docker volumes (anchored to root — must not match app/server/src/data/)
 /data/

@@ -6,9 +6,9 @@ import {
     type BaseMessage,
 } from '@langchain/core/messages';
 import { getChatModel } from '#modules/ai/helpers/llm.js';
-import type { POI } from '#modules/places/types.js';
+import type { POI } from '#modules/places/catalog.js';
 import type { Weather } from '#modules/weather/types.js';
-import { CITY_DISPLAY_NAMES } from '#modules/places/types.js';
+import { CITY_DISPLAY_NAMES } from '#modules/places/catalog.js';
 import type { AgentStateType } from '../state.js';
 import type { ElicitSpec, URLElicitSpec } from '../types.js';
 import {

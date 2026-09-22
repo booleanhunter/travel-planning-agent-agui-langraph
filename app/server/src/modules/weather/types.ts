@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CitySchema } from '#modules/places/types.js';
+import { CitySchema } from '#modules/places/catalog.js';
 
 export const WeatherSchema = z.object({
     city: CitySchema,

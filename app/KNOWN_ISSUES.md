@@ -1,51 +1,50 @@
 # Known Issues
 
-## Wrong POI gets picked when user adds a place by name that isn't in the current candidate list
+## Wrong POI gets picked when the user adds a place by name that isn't in the current candidate list
 
 ### Symptom
 
-User has 3 picks committed:
-1. Sin City Rooftop Resto & Lounge
-2. The Bombay Canteen
-3. Prithvi Cafe
+User has 3 picks committed for a Bangalore food trip:
+1. MTR (Mavalli Tiffin Rooms)
+2. Koshy's
+3. Karavalli
 
-User asks for cultural landmarks. Agent's reply mentions Kala Ghoda Art Precinct (among others). User says "add kala ghoda as well" in chat.
+User asks for outdoors and nature spots. Agent's reply mentions Lalbagh Botanical Garden (among others). User says "add lalbagh as well" in chat.
 
-Agent's text response says "I've added the Kala Ghoda Art Precinct." But Redis now contains:
+Agent's text response says "I've added Lalbagh Botanical Garden." But Redis now contains:
 
 ```
-[Sin City, Bombay Canteen, Prithvi Cafe, Lake View Cafe]   ← Lake View Cafe, not Kala Ghoda
+[MTR, Koshy's, Karavalli, The Garden Café]   ← a food spot, not Lalbagh
 ```
 
-Lake View Cafe is a real entry at `pointsOfInterest:ChIJVVVVZgC45zsRV4SB6sd1V2M` — a Mumbai food spot whose description mentions "vibrant decor."
+The fourth entry is a real POI in the Bangalore index: a restaurant whose description mentions "lush greenery" and "garden seating." Correct data for that id, wrong place.
 
 ### Root cause (from server logs)
 
-Two issues compound:
+Several issues compound:
 
 **1. `TravelAgent` re-widens the `interests` slot.**
 
-Client sends `interests=[culture]` (carried forward from the previous turn). TravelAgent's LLM looks at the conversation history, reads "add kala ghoda **as well**" as "add to my broader set," and re-extracts:
+The trip draft carries `interests=[outdoors]` from the previous turn. TravelAgent's LLM reads "add lalbagh **as well**" as "add to my broader set" and re-extracts every interest seen in the conversation:
 
 ```
-[travel-agent] LLM — intent=itineraryPlanning destination=mumbai
-  interests=[food,offbeat,slow,landmarks,nightlife,outdoors,culture]   ← all 7!
+[travel-agent] interests=[food,outdoors,slow,landmarks,culture]   ← widened
 ```
 
-**2. `FetchRecs` runs the broad query for turn 3.**
+**2. `getPoiDetails("lalbagh")` runs against a noisy embedding.**
 
 ```
-[fetch-recs] query="food · offbeat · slow · landmarks · nightlife · outdoors · culture"
-[fetch-recs] returned 12 POIs (top: Sin City, Little Easy, Bombay Canteen)
+🔧 [tools] getPoiDetails — city=bangalore placeName="lalbagh"
+[places] KNN returned 10 (top: The Garden Café, Lalbagh …?)
 ```
 
-Kala Ghoda is no longer in the top-12. Lake View Cafe (food, ★4.7, description matches the noisy embedding) makes it in.
+Vector similarity between "lalbagh" and POI descriptions is weak; food POIs with garden vocabulary compete with the actual botanical garden. On some runs Lalbagh is ranked low or missing from the top 10.
 
-**3. `FollowUp`'s system prompt forces the LLM to pick from `state.pois`.**
+**3. The system prompt forces the LLM to pick from the candidate list.**
 
-> *"When called, pass the COMPLETE new picked set (replace semantics) using only poiIds from the candidate list below."*
+> *"Pass `pickedPois` as `[{poiId, name}]` using REAL ids from getPoiDetails … NEVER pass list indices."*
 
-The LLM has no valid ID for Kala Ghoda. It substitutes the closest candidate it can find — Lake View Cafe.
+The LLM has a name it knows (from the turn-2 reply in working memory) but no confident id for it. It substitutes the closest candidate it can find.
 
 **4. Tool body trusts the `poiId` and ignores the `name`.**
 
@@ -54,54 +53,66 @@ const fromCurrent = state.pois.find((p) => p.id === m.poiId);
 if (fromCurrent) { enriched.push(fromCurrent); continue; }
 ```
 
-Looks up `ChIJVVVV...` → gets Lake View Cafe (correct data for that ID) → writes it to Redis.
+Looks up the id → gets The Garden Café → writes it to Redis. Returns `{ updated: true, count: 4 }`.
 
-**5. The textResponse LLM doesn't know what was actually picked.**
+**5. The final LLM iteration doesn't know what was actually picked.**
 
-The tool returns `{updated: true, count: 4}` — no names. The second LLM call paraphrases the user's request, says "Added Kala Ghoda." Hence the gaslighting effect.
+The tool result carries a count, no names. The model paraphrases the user's request and says "Added Lalbagh." Hence the gaslighting effect.
 
-Not a hallucination — every component is doing what we told it to. The system is just structurally incoherent for this scenario.
+Not a hallucination — every component is doing what we told it to. The system is structurally incoherent for this scenario.
+
+### Why this is a tracing problem
+
+A tool-call trace of turn 3 is entirely green: `getPoiDetails` 200, `updateItinerary` 200, both generations 200. The failure is only visible in the **context** each step was given:
+
+- Working memory returned 4 messages and all 4 were passed to the model, including the turn-2 reply that names Lalbagh. The agent *did* see it.
+- The KNN retriever returned 10 candidates; Lalbagh's rank (or absence) is in the candidate list.
+- The iteration-1 generation input shows the candidate-id block without a Lalbagh id and the instruction that forbids anything else.
+- The `updateItinerary` input shows `name: "Lalbagh…"` next to a `poiId` that resolves to a different place.
+- The iteration-2 generation input shows a `ToolMessage` with a count and no names.
+
+This is the demo scenario for the talk (see `docs/phase-1-langfuse-prompt.md`, task 7, `npm run demo:lalbagh`).
 
 ### Candidate fixes (TBD — discussed but not applied)
 
 **1. Validate name matches `poiId` in the tool body.**
-Smallest diff. Drop picks where the resolved POI's name doesn't match the LLM-supplied name.
+Smallest diff. Drop picks where the resolved POI's name doesn't fuzzy-match the LLM-supplied name; return them as `rejected: [...]`.
 - Pro: tiny change, defensive safety net.
-- Con: silent — the second LLM still reports "Added Kala Ghoda" even though nothing was added. Pair with #5.
+- Con: silent unless paired with #5 — the final LLM would still say "Added Lalbagh."
 
 **2. Send `state.pois` from the client every turn.**
-The client's `gridPois` already includes Kala Ghoda (it accumulates orphans). Mirror it to the server so `FollowUp`'s LLM sees what the user sees.
-- Pro: mirrors how `pickedPois` already flows. Server stays stateless. Eliminates the Kala Ghoda case structurally.
-- Con: larger per-turn payload. Decouples "candidates the LLM sees" from "candidates this turn's vector search returned."
+The client's grid already accumulates candidates across turns. Mirror it to the server so the LLM sees what the user sees.
+- Pro: server stays stateless. Eliminates the case structurally.
+- Con: larger payload; decouples "candidates the LLM sees" from "candidates this turn's search returned."
 
 **3. Accumulate `state.pois` server-side per session.**
-Redis-backed cache. Every `FetchRecs` merges into a session POI cache. `FollowUp` shows the cumulative cache.
+Redis-backed cache merged on every search.
 - Pro: server stays source of truth.
-- Con: introduces session state. Candidate list shown to LLM grows unbounded.
+- Con: introduces session state; candidate list grows unbounded.
 
-**4. Don't re-run `FetchRecs` on edit-like turns.**
-If intent looks like "add X" / "remove X" / "swap," skip the fetch. Useful only in combination with #2 (so the LLM has prior pois to act on).
+**4. Don't re-run search on edit-like turns.**
+If intent looks like "add X" / "remove X" / "swap," skip the broad search. Only useful with #2 or #3.
 
-**5. Stop the textResponse LLM from inventing.**
-Pass the actual added names back through the tool message:
+**5. Stop the final LLM iteration from inventing.**
+Return the actual names through the tool message:
 ```ts
-content: JSON.stringify({ updated: true, added: enriched.map(p => p.name) })
+content: JSON.stringify({ updated: true, added: enriched.map(p => p.name), rejected })
 ```
-Doesn't fix the wrong-pick, but stops the gaslighting. Apply regardless of which other fix lands.
+Doesn't fix the wrong pick, but stops the gaslighting. Apply regardless of which other fix lands.
 
-**6. Switch the tool from IDs to names + server-side resolution.**
-Drop `poiId` from the tool schema. Accept names. Tool body resolves each name via:
-(a) `state.pois`, (b) `state.pickedPois`, (c) `FT.SEARCH @name @city` over the full POI index.
-- Pro: names are stable across turns; LLM can't pass an id/name mismatch (there's no id field); step (c) finds Kala Ghoda even when this turn's KNN misses it.
+**6. Switch the tool from ids to names + server-side resolution.**
+Drop `poiId` from the tool schema. Resolve each name via (a) `state.pois`, (b) `state.pickedPois`, (c) `FT.SEARCH @name @city` over the full index.
+- Pro: names are stable across turns; no id/name mismatch possible; (c) finds Lalbagh even when this turn's KNN misses it.
 - Con: name collisions theoretically possible within a city.
 
 **7. Fix TravelAgent's interest re-extraction.**
-Separate concern from the wrong-pick, but it's the *trigger*. Tell the extractor to preserve the existing `interests` slot when the user's message doesn't introduce new interests. Edit-style messages ("add X", "remove Y") shouldn't trigger re-extraction at all.
+The trigger. Preserve the existing `interests` slot when the message doesn't introduce new interests; edit-style messages ("add X", "remove Y") shouldn't re-extract at all.
+
+For the demo, fixes #1 and #5 are applied behind `DEMO_FIX=true` (see the Phase 1 prompt, task 7, `--fixed` mode). Default behaviour is unchanged.
 
 ### Files involved
 
-- `server/src/agent/nodes/travel-agent.ts` — interest re-extraction (fix #7)
-- `server/src/agent/nodes/fetch-recs.ts` — query construction
-- `server/src/agent/nodes/follow-up.ts` — tool schema, system prompt, tool body, textResponse handoff
-- `client/src/hooks/useAgentStream.ts` — would change for fix #2 (send pois)
-- `server/src/data/pois-redis.ts` — would add a name-lookup helper for fix #6
+- `server/src/modules/ai/agentic-trip-workflow/nodes/travel-agent.ts` — system prompt candidate block, interest re-extraction (#7), final-iteration handoff
+- `server/src/modules/ai/agentic-trip-workflow/tools.ts` — `getPoiDetails`, `updateItinerary` tool body (#1, #5, #6)
+- `server/src/modules/places/domain/places-service.ts` — KNN query; would add a name-lookup helper for #6
+- `client/src/hooks/useAgentStream.ts` — would change for #2 (send pois)
