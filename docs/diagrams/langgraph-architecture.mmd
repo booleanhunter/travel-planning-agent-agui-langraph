@@ -29,7 +29,7 @@ flowchart LR
 
     subgraph Backend["<b>LangGraph backend</b>"]
         direction TB
-        Ctx["<b>ContextRetriever</b><br/>Hydrate state from Redis + AMS"]:::graphNode
+        Ctx["<b>ContextRetriever</b><br/>Hydrate state from Redis + Agent Memory (Iris)"]:::graphNode
         TA["<b>TravelAgent</b><br/>ReAct loop with bound tools"]:::graphNode
         FU["<b>FollowUp</b><br/>Extract slots, elicit, suggest"]:::graphNode
         Ctx --> TA --> FU
@@ -48,7 +48,7 @@ flowchart LR
     subgraph Stores["<b>Data stores</b>"]
         direction TB
         Redis["<b>Redis</b><br/>POI catalog (FT.SEARCH)<br/>Trip store"]:::store
-        AMS["<b>AMS</b><br/>Working + long-term memory<br/>Summary views"]:::store
+        AMS["<b>Redis Agent Memory (Iris)</b><br/>Hosted · via SDK<br/>Session transcript + long-term memory"]:::store
     end
 
     User ==> Chat

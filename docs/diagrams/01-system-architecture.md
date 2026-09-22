@@ -1,6 +1,6 @@
 # 01 — System Architecture
 
-Block diagram of the Trip Itinerary Builder. Shows the user, the React + `@ag-ui/client` frontend (sidebar chat + canvas + memory drawer), the Node + Express backend with two transport adapters (`chat.ts` for AG-UI/SSE and `mcp-server.ts` for MCP) plus a shared `runtime.ts` wrapper, the three-node LangGraph workflow, Redis (POI hybrid index + trip-store + AMS-backed storage), Agent Memory Server, and external services. The seed script is shown separately — it's a one-time dev-time tool, not on the runtime path.
+Block diagram of the Trip Itinerary Builder. Shows the user, the React + `@ag-ui/client` frontend (sidebar chat + canvas + memory drawer), the Node + Express backend with two transport adapters (`chat.ts` for AG-UI/SSE and `mcp-server.ts` for MCP) plus a shared `runtime.ts` wrapper, the three-node LangGraph workflow, Redis (POI hybrid index + trip-store), the hosted Redis Agent Memory (Iris) service, and external services. The seed script is shown separately — it's a one-time dev-time tool, not on the runtime path.
 
 ```mermaid
 flowchart TD
@@ -24,24 +24,23 @@ flowchart TD
     %% LangGraph — three nodes, no checkpointer
     subgraph LangGraph["LangGraph workflow  (no checkpointer)"]
         direction TB
-        CR["ContextRetriever<br/>read Redis trip-store + AMS<br/>(getPreferences · getConversation)"]
+        CR["ContextRetriever<br/>read Redis trip-store + Agent Memory (Iris)<br/>(getPreferences · getConversation)"]
         TA["TravelAgent (ReAct loop)<br/>bound tools, LLM picks + parallelizes:<br/>searchPois · getPoiDetails · getWeather<br/>· updateItinerary · saveTripToCalendar"]
-        FU["FollowUp<br/>extract slots · buildElicit · suggestedActions<br/>· appendTurn (AMS) · ensureDraft (Redis)"]
+        FU["FollowUp<br/>extract slots · buildElicit · suggestedActions<br/>· appendTurn (Agent Memory) · ensureDraft (Redis)"]
 
         CR --> TA --> FU
     end
 
-    %% Redis — POI hybrid index + trip-store + AMS-backed storage
+    %% Redis — POI hybrid index + trip-store (application data only)
     subgraph RedisStack["Redis Stack"]
         PoiIndex["idx:pointsOfInterest<br/>TAG (city) + VECTOR<br/>(GEO indexed but not queried)<br/>pre-seeded · durable"]
         TripStore[("trip-store HASH<br/>user:&lt;userId&gt;:trip:&lt;tripId&gt;")]
-        AMSStore[("AMS-owned keys<br/>working + long-term memory")]
     end
 
-    %% Agent Memory Server — separate service, same Redis underneath
-    subgraph AMS["Redis Agent Memory Server  ·  :8000"]
-        Working["Working memory<br/>conversation transcript per tripId"]
-        LongTerm["Long-term memory<br/>preferences + episodes"]
+    %% Redis Agent Memory (Iris) — hosted external service, reached via the SDK
+    subgraph AMS["Redis Agent Memory (Iris)  ·  hosted · via SDK"]
+        Working["Session transcript<br/>ordered events per tripId"]
+        LongTerm["Long-term memory<br/>preferences + trip history"]
     end
 
     %% External services
@@ -74,12 +73,11 @@ flowchart TD
     TA -.->|embed interests / chat| OpenAI
     TA -.->|saveTripToCalendar OAuth + API| Google
     FU -.->|extraction LLM| OpenAI
-    FU -.->|appendTurn · fire-and-forget| AMS
+    FU -.->|appendTurn · awaited| AMS
     FU -.->|ensureDraft| TripStore
 
-    UserRoutes -.->|preferences + past trips| AMS
+    UserRoutes -.->|preferences| AMS
     UserRoutes -.->|past trips (Redis keys)| TripStore
-    AMS -.- AMSStore
 
     Frontend -.->|map tiles| OSM
 
@@ -87,7 +85,8 @@ flowchart TD
     SeedPois -->|one-time fetch + embed| Places
     SeedPois -.->|embeddings| OpenAI
     SeedPois -->|HSET + index population| PoiIndex
-    SeedUserData -->|preferences + past trips| AMS
+    SeedUserData -->|long-term memories| AMS
+    SeedUserData -->|trip records| TripStore
 
     %% Styling
     classDef nodeStyle fill:transparent,color:#000000,stroke:#8a99a0,stroke-width:2px
@@ -99,12 +98,12 @@ flowchart TD
     classDef green fill:transparent,color:#7cc77f,stroke:#7cc77f,stroke-width:2px,stroke-dasharray: 5 5
     classDef yellow fill:transparent,color:#e0c200,stroke:#e0c200,stroke-width:2px,font-weight:bold,stroke-dasharray: 5 5
 
-    class User,Frontend,ChatRoute,MCPRoute,UserRoutes,OAuthRoute,Runtime,CR,TA,FU,PoiIndex,TripStore,AMSStore,Working,LongTerm,OpenAI,Google,OSM,Places,SeedPois,SeedUserData nodeStyle
+    class User,Frontend,ChatRoute,MCPRoute,UserRoutes,OAuthRoute,Runtime,CR,TA,FU,PoiIndex,TripStore,Working,LongTerm,OpenAI,Google,OSM,Places,SeedPois,SeedUserData nodeStyle
     class Backend,LangGraph,RedisStack,AMS,External,SeedScript subgraphStyle
     class Backend blue
     class LangGraph purple
     class RedisStack red
-    class AMS red
+    class AMS green
     class External green
     class SeedScript yellow
 ```
@@ -113,20 +112,21 @@ flowchart TD
 
 1. **Two transport adapters, one shared streaming wrapper.** `chat.ts` (AG-UI/SSE at `/api/chat`) and `mcp-server.ts` (MCP at `/mcp` plus stdio) both call into `streamPlannerTurn` in `runtime.ts`. The wrapper streams `graph.stream(input, { streamMode: 'updates' })` and fans per-node deltas via callbacks. AG-UI maps those callbacks to `@ag-ui/core` `EventType` events (`RUN_STARTED`, `STEP_STARTED`/`STEP_FINISHED` per node, `STATE_SNAPSHOT`, `RUN_FINISHED`). MCP maps them to progress notifications + the eventual tool result, and loops on `server.elicitInput()` between graph invocations when `state.elicit` is returned.
 
-2. **ContextRetriever (single read point at graph entry).** Loads `state.preferences` from AMS (`getPreferences`), the current trip's transcript from AMS (`getConversation`), and the current trip draft from Redis (`getTrip`).
+2. **ContextRetriever (single read point at graph entry).** Loads `state.preferences` from Agent Memory (`getPreferences`), the current trip's transcript from Agent Memory (`getConversation`), and the current trip draft from Redis (`getTrip`).
 
 3. **TravelAgent (ReAct loop).** A `createReactAgent`-style loop with five bound tools: `searchPois`, `getPoiDetails`, `getWeather`, `updateItinerary`, `saveTripToCalendar`. The LLM picks which to call; the system prompt instructs it to emit `searchPois` + `getWeather` in parallel for trip-planning intents, so both run concurrently when the agent fans tool calls.
 
-4. **FollowUp (single LLM call + persist).** One structured-output LLM call extracts current-turn slots from the full conversation, computes `needsMoreInfo`, decides whether to elicit (via `buildElicit`), and emits `suggestedActions[]` for follow-up chips. If new slots were filled, persists via `ensureDraft` (Redis trip-store) and `appendTurn` (AMS working memory, fire-and-forget). If required slots are still missing and the user hasn't already declined, returns `state.elicit = { mode, message, requestedSchema }` as final state.
+4. **FollowUp (single LLM call + persist).** One structured-output LLM call extracts current-turn slots from the full conversation, computes `needsMoreInfo`, decides whether to elicit (via `buildElicit`), and emits `suggestedActions[]` for follow-up chips. If new slots were filled, persists via `ensureDraft` (Redis trip-store) and `appendTurn` (Agent Memory session, awaited so the next turn hydrates a complete transcript). If required slots are still missing and the user hasn't already declined, returns `state.elicit = { mode, message, requestedSchema }` as final state.
 
 5. **Elicit is a state field, not a HITL channel.** The graph ends when `FollowUp` returns; the adapter handles the round-trip. AG-UI surfaces it as a `STATE_SNAPSHOT` and waits for the next client request. MCP calls `server.elicitInput()` and re-invokes `streamPlannerTurn` inline with the merged state, on either `accept` (merge content) or `decline` (set `userDeclinedElicit: true`); `cancel` returns early.
 
-### The two faces of Redis
+### Redis and Agent Memory
 
-Redis Stack is used in two ways on the same instance:
+Redis (local, via Docker) has a single role now: application data.
 
-- **Trip-store + POI hybrid index** — application data. The trip-store is a per-user/per-trip HASH (`user:<userId>:trip:<tripId>`). The POI index (`idx:pointsOfInterest`) was populated once by `scripts/seed-pois.js` and serves runtime reads via a single `FT.SEARCH` per call — city TAG filter + KNN over the interests vector. The `location` field is GEO-indexed but the runtime query never uses a GEO filter today.
-- **Agent Memory Server backing store** — AMS is a separate process exposing a REST API on `:8000` and persisting to the same Redis. The application code talks to AMS via `getPreferences` / `getConversation` / `appendTurn` (in `user-service.ts`), never to the AMS-backing Redis keys directly.
+- **Trip-store + POI hybrid index.** The trip-store is a per-user/per-trip HASH (`user:<userId>:trip:<tripId>`). The POI index (`idx:pointsOfInterest`) was populated once by `scripts/seed-pois.js` and serves runtime reads via a single `FT.SEARCH` per call — city TAG filter + KNN over the interests vector. The `location` field is GEO-indexed but the runtime query never uses a GEO filter today.
+
+Memory is not on this Redis instance. It lives in **Redis Agent Memory (Iris)**, a hosted service reached over HTTP through the `@redis-iris/agent-memory` SDK (`serverURL` + `storeId` + `apiKey`). The application talks to it via `getPreferences` / `getConversation` / `appendTurn` (in `user-service.ts`): a session per `tripId` holds the conversation transcript as ordered events, and long-term memory holds preferences + trip history scoped by `ownerId` + `topics`.
 
 ### What's *not* shown (intentionally)
 

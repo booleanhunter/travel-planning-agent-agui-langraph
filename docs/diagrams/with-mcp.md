@@ -25,7 +25,7 @@ flowchart TB
 
           subgraph Core["Compiled graph (no checkpointer · stateless turns)"]
               direction TB
-              CR["ContextRetriever<br/>reads Redis trip-store +<br/>AMS preferences + AMS working memory"]
+              CR["ContextRetriever<br/>reads Redis trip-store +<br/>Agent Memory (Iris): preferences + session transcript"]
               TA["TravelAgent (ReAct loop)<br/>bound tools, run in parallel when LLM<br/>emits multiple in one turn:<br/>searchPois · getPoiDetails · getWeather<br/>· updateItinerary · saveTripToCalendar"]
               FU["FollowUp<br/>one LLM call: extract slots, decide<br/>elicit (buildElicit), generate<br/>suggestedActions; persist via<br/>appendTurn + ensureDraft"]
               CR --> TA --> FU
@@ -33,9 +33,9 @@ flowchart TB
 
           subgraph Infra["Infrastructure"]
               direction LR
-              Redis[("Redis<br/>trip-store HASH<br/>+ idx:pointsOfInterest (TAG + VECTOR)<br/>+ AMS backing store")]
+              Redis[("Redis<br/>trip-store HASH<br/>+ idx:pointsOfInterest (TAG + VECTOR)")]
               LLM["OpenAI<br/>chat + embeddings"]
-              AMS["Agent Memory Server<br/>(REST :8000)<br/>preferences + working memory"]
+              AMS["Redis Agent Memory (Iris)<br/>hosted · via SDK<br/>preferences + session transcript"]
           end
       end
 
@@ -74,7 +74,7 @@ sequenceDiagram
       participant Adapter as Protocol adapter
       participant Runtime as runtime.ts<br/>(streamPlannerTurn)
       participant Graph as Graph<br/>(CR → TA → FU)
-      participant AMS as Agent Memory Server
+      participant AMS as Agent Memory (Iris)
       participant Redis
 
       User->>Surface: "Plan a trip to Bangalore"
@@ -106,7 +106,7 @@ sequenceDiagram
               Graph-->>Runtime: final state delta { elicit: { mode, message, requestedSchema }, response }
               Runtime-->>Adapter: onNodeUpdate('FollowUp', delta) → onFinish(finalState)
           else slots all satisfied
-              Graph->>AMS: appendTurn(tripId, turn) · fire-and-forget
+              Graph->>AMS: appendTurn(tripId, turn) · awaited
               Graph->>Redis: ensureDraft(userId, tripId, …)
               Graph-->>Runtime: final state delta { pois, weather, response, suggestedActions }
               Runtime-->>Adapter: onNodeUpdate(...) → onFinish(finalState)

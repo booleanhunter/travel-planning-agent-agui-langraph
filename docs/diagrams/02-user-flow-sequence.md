@@ -18,7 +18,7 @@ sequenceDiagram
     participant Run as chat.ts (AG-UI / SSE)
     participant Runtime as runtime.ts<br/>(streamPlannerTurn)
     participant Graph as Graph<br/>(CR → TA → FU)
-    participant AMS as Agent Memory Server
+    participant AMS as Agent Memory (Iris)
     participant Redis as Redis · trip-store +<br/>idx:pointsOfInterest
     participant LLM as OpenAI
 
@@ -42,7 +42,7 @@ sequenceDiagram
     LLM-->>Graph: { slots: { destination=Bangalore }, needsMoreInfo=true, response, followups }
     Graph->>Graph: buildElicit({ missingFields=[dates], preferences }) → ElicitSpec
     Graph->>Redis: ensureDraft(userId, tripId, …)
-    Graph->>AMS: appendTurn(tripId, turn) · fire-and-forget
+    Graph->>AMS: appendTurn(tripId, turn) · awaited
 
     Runtime-->>Run: onNodeUpdate(FollowUp, { elicit, response, … }) → onFinish
     Run-->>UI: SSE: STATE_SNAPSHOT { elicit: {...}, response, … }<br/>then RUN_FINISHED
@@ -78,7 +78,7 @@ sequenceDiagram
     Graph->>LLM: extraction LLM call (structured output)
     LLM-->>Graph: { slots all present, needsMoreInfo=false, response, followups }
     Graph->>Redis: ensureDraft(…)
-    Graph->>AMS: appendTurn(…) · fire-and-forget
+    Graph->>AMS: appendTurn(…) · awaited
 
     Runtime-->>Run: onNodeUpdate(deltas) → onFinish
     Run-->>UI: SSE: STATE_SNAPSHOT { pois, weather, response, suggestedActions } + RUN_FINISHED
@@ -134,7 +134,7 @@ sequenceDiagram
 
 ## Sequence 3 — Memory drawer + load past trip
 
-Hamburger click opens the memory drawer. Loading a past trip rehydrates from AMS (preferences + working memory) and Redis (the seeded past-trip metadata). No LangGraph run involved — these are plain REST endpoints on `/api/user`.
+Hamburger click opens the memory drawer. Loading a past trip rehydrates from Agent Memory (Iris) (preferences + session transcript) and Redis (the seeded past-trip metadata). No LangGraph run involved — these are plain REST endpoints on `/api/user`.
 
 ```mermaid
 sequenceDiagram
@@ -142,7 +142,7 @@ sequenceDiagram
     actor User
     participant UI as React + @ag-ui/client
     participant Backend as Express · /api/user<br/>(trips-routes.ts)
-    participant AMS as Agent Memory Server
+    participant AMS as Agent Memory (Iris)
     participant Redis
 
     User->>UI: clicks hamburger
@@ -175,8 +175,8 @@ sequenceDiagram
 
 ## What these diagrams emphasize
 
-- **Memory before extraction.** `ContextRetriever` reads AMS preferences + transcript *before* `TravelAgent` runs, so memory-sourced values prefill the elicit chip card that `FollowUp` builds. The "from memory" badge tracks which slots came from AMS vs. the prompt.
+- **Memory before extraction.** `ContextRetriever` reads Agent Memory (Iris) preferences + transcript *before* `TravelAgent` runs, so memory-sourced values prefill the elicit chip card that `FollowUp` builds. The "from memory" badge tracks which slots came from memory vs. the prompt.
 - **Stateless turns.** Each graph run is one-shot — no `interrupt()`, no checkpointer. Elicit is returned as final state; the client resubmits with merged state.
 - **Parallelism lives inside `TravelAgent`.** The LLM is system-prompted to emit `searchPois` + `getWeather` together for trip-planning intents. The agent runtime runs the tool calls concurrently. Visible in the AG-UI event stream as overlapping `STATE_SNAPSHOT` deltas (`pois` and `weather` arriving close together).
 - **Pre-seeded POI catalog.** The runtime never calls Google Places. Sequences 1 and 2 both touch only Redis + OpenAI (embeddings + chat) on the request path.
-- **Memory drawer doesn't touch the graph.** Sequence 3 is plain REST against `/api/user`, served by `trips-routes.ts`. The trip-store HASH lives in Redis; the transcript lives in AMS. Both are read directly.
+- **Memory drawer doesn't touch the graph.** Sequence 3 is plain REST against `/api/user`, served by `trips-routes.ts`. The trip-store HASH lives in Redis; the transcript lives in Agent Memory (Iris). Both are read directly.

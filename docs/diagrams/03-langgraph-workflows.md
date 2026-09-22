@@ -10,7 +10,7 @@ One graph, three linear nodes, no checkpointer. The decision-making LLM lives in
 
 ```mermaid
 flowchart TD
-    Start((START)) --> CR[ContextRetriever<br/>load Redis trip-store + AMS<br/>preferences and working memory]
+    Start((START)) --> CR[ContextRetriever<br/>load Redis trip-store + Agent Memory (Iris)<br/>preferences and session transcript]
     CR --> TA[TravelAgent<br/>ReAct loop with bound tools]
     TA --> FU[FollowUp<br/>extract slots · decide elicit ·<br/>suggestedActions · persist]
     FU --> End(((END)))
@@ -24,7 +24,7 @@ flowchart TD
 #### Notes on the topology
 
 - **Linear, no branching at the graph level.** No conditional edges, no router. The branching that matters (whether to elicit, which tool to call) happens *inside* nodes — `TravelAgent`'s ReAct loop and `FollowUp`'s single LLM call.
-- **No checkpointer.** Each graph run is one-shot. State that survives between turns lives on the client (filled slots, picked POIs) and in AMS (conversation, preferences, past trips).
+- **No checkpointer.** Each graph run is one-shot. State that survives between turns lives on the client (filled slots, picked POIs) and in Agent Memory (Iris) (conversation, preferences, past trips).
 - **Elicit returned as state.** `FollowUp` returns `state.elicit = { mode, message, requestedSchema }` as the graph's final output when required slots are missing and the user hasn't already declined. The graph ends; the adapter handles the round-trip.
 - **Streaming.** `runtime.ts` calls `graph.stream(input, { streamMode: 'updates' })` and fans the per-node delta dictionary out as `onNodeStart`/`onNodeUpdate`/`onNodeFinish` callbacks to the adapter.
 
@@ -32,12 +32,12 @@ flowchart TD
 
 ## ContextRetriever — internal flow
 
-Single read point at graph entry. Hydrates state from Redis (the current trip draft) and AMS (recurring preferences + the live conversation transcript). One round each, no parallelism needed — these are the prerequisites every downstream node assumes.
+Single read point at graph entry. Hydrates state from Redis (the current trip draft) and Agent Memory (Iris) (recurring preferences + the live conversation transcript). One round each, no parallelism needed — these are the prerequisites every downstream node assumes.
 
 ```mermaid
 flowchart LR
-    IN([node enters]) --> PR[getPreferences userId<br/>via user-service.ts → AMS]
-    IN --> CV[getConversation tripId<br/>via user-service.ts → AMS]
+    IN([node enters]) --> PR[getPreferences userId<br/>via user-service.ts → Agent Memory]
+    IN --> CV[getConversation tripId<br/>via user-service.ts → Agent Memory]
     IN --> TR[getTrip userId, tripId<br/>via trips-service.ts → Redis]
     PR --> OUT([state delta: preferences])
     CV --> OUT2([state delta: conversation])
@@ -94,7 +94,7 @@ flowchart LR
     LLM --> ELI{needsMoreInfo<br/>AND not<br/>userDeclinedElicit?}
     ELI -- yes --> BE[buildElicit · construct<br/>ElicitSpec from missingFields<br/>+ state.preferences defaults]
     ELI -- no --> SK[skip elicit]
-    BE --> PSV[persist:<br/>ensureDraft Redis<br/>appendTurn AMS · fire-and-forget]
+    BE --> PSV[persist:<br/>ensureDraft Redis<br/>appendTurn Agent Memory · awaited]
     SK --> PSV
     PSV --> OUT([state delta:<br/>response · suggestedActions ·<br/>elicit?])
 
@@ -129,6 +129,6 @@ flowchart LR
 The graph could have been a single `createReactAgent` call — `TravelAgent` already covers the LLM-driven tool dispatch. The reason for the wrap is that **two boundary concerns don't belong inside the ReAct loop**:
 
 - **Read concerns** (`ContextRetriever`) — every turn needs the same hydration of preferences + transcript + trip draft *before* the LLM sees the user message. Doing it inside the agent's system prompt would mean re-running the loads on every tool-call iteration. The pre-step is cleaner.
-- **Write + elicit concerns** (`FollowUp`) — extracting slots, computing `needsMoreInfo`, building the elicit schema, and writing to AMS + Redis all happen *after* the agent has decided what to do. Mixing this with tool dispatch confuses the LLM (it starts trying to "extract" things mid-turn). One node, one structured-output call, one persist.
+- **Write + elicit concerns** (`FollowUp`) — extracting slots, computing `needsMoreInfo`, building the elicit schema, and writing to Agent Memory + Redis all happen *after* the agent has decided what to do. Mixing this with tool dispatch confuses the LLM (it starts trying to "extract" things mid-turn). One node, one structured-output call, one persist.
 
 Both boundary nodes are deterministic-ish and short. `TravelAgent` is where the interesting LLM autonomy lives.

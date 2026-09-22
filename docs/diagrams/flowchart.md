@@ -6,7 +6,7 @@ Source-of-truth Mermaid for the current graph topology. The richer diagrams (01,
 
 ```mermaid
 flowchart TD
-      START([START]) --> CR[ContextRetriever<br/><i>hydrate from Redis trip-store + AMS</i>]
+      START([START]) --> CR[ContextRetriever<br/><i>hydrate from Redis trip-store + Agent Memory (Iris)</i>]
       CR --> TA[TravelAgent<br/><i>ReAct loop with bound tools</i>]
       TA --> FU[FollowUp<br/><i>extract slots · decide elicit · suggestedActions ·<br/>persist appendTurn + ensureDraft</i>]
       FU --> END([END])
@@ -45,9 +45,9 @@ flowchart LR
       LLM --> ELI{missing required slots<br/>and not declined?}
       ELI -->|yes| BE[buildElicit · construct ElicitSpec<br/>from missingFields + state.preferences]
       ELI -->|no| SK[skip elicit]
-      BE --> PSV[persist:<br/>appendTurn AMS · ensureDraft Redis]
+      BE --> PSV[persist:<br/>appendTurn Agent Memory · ensureDraft Redis]
       SK --> PSV
       PSV --> OUT([return state delta])
 ```
 
-`FollowUp` extracts current-turn slots from the full conversation, decides whether to elicit, generates `suggestedActions[]`, then persists any new slot values to the Redis trip-store and appends the turn to AMS working memory. The persistence write is fire-and-forget at the AMS side.
+`FollowUp` extracts current-turn slots from the full conversation, decides whether to elicit, generates `suggestedActions[]`, then persists any new slot values to the Redis trip-store and appends the turn to the Agent Memory (Iris) session. The transcript write is awaited, so the next turn's `ContextRetriever` hydrates a complete conversation.
